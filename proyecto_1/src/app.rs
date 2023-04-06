@@ -1,4 +1,5 @@
 use eframe::egui::{self, Ui};
+use std::time::{Duration, Instant};
 
 use crate::{constants::*, random::UniformRng};
 
@@ -22,6 +23,7 @@ pub struct AppState {
     nums: Vec<u32>,
     mode: ExecutionMode,
     speed: f32,
+    previous_time: Instant,
 }
 
 impl AppState {
@@ -35,12 +37,13 @@ impl AppState {
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Manual,
             speed: 1.0,
+            previous_time: Instant::now(),
         }
     }
 }
 
 impl AppState {
-    fn controls_panel(&mut self, ui: &mut Ui) {
+    fn controls_panel(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         ui.heading("Controls");
         if ui.button(format!("{:?}", self.mode)).clicked() {
             self.mode.toggle();
@@ -56,8 +59,18 @@ impl AppState {
             ExecutionMode::Automatic => {
                 ui.add(
                     egui::Slider::new(&mut self.speed, 0.1..=10.0)
-                        .text("speed"),
+                        .text("seconds"),
                 );
+                let time_passed = Instant::now() - self.previous_time;
+                if time_passed
+                    > Duration::from_millis((self.speed * 1000.0) as u64)
+                {
+                    for num in &mut self.nums {
+                        *num = self.rng.gen_range(0..=3);
+                    }
+                    self.previous_time = Instant::now();
+                }
+                ctx.request_repaint();
             }
         }
     }
@@ -68,7 +81,9 @@ impl eframe::App for AppState {
         egui::SidePanel::right("controls_panel")
             .resizable(false)
             .show(ctx, |ui| {
-                ui.vertical_centered_justified(|ui| self.controls_panel(ui))
+                ui.vertical_centered_justified(|ui| {
+                    self.controls_panel(ctx, ui)
+                })
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
