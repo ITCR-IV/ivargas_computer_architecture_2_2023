@@ -1,23 +1,28 @@
-// LCG algorithm constants, taken from glibc implementation
+// LCG algorithm constants, taken from:
+//  L'Ecuyer, Pierre (1999). "Tables of Linear Congruential Generators of 
+//  Different Sizes and Good Lattice Structure". Mathematics of 
+//  Computation. doi:10.1090/S0025-5718-99-00996-5
+
 use std::ops::{Bound, RangeBounds};
 
-const M: u32 = 2u32.pow(31);
-const A: u32 = 1103515245;
-const C: u32 = 12345;
+const M: u64 = 2u64.pow(32) - 5;
+const A: u64 = 1588635695;
+const C: u64 = 12345;
 
 pub(crate) struct UniformRng {
-    state: u32,
+    state: u64,
 }
 
 impl UniformRng {
-    pub fn from_seed(seed: u32) -> UniformRng { UniformRng { state: seed } }
+    pub fn from_seed(seed: u32) -> UniformRng {
+        UniformRng { state: seed.into() }
+    }
 
     pub fn gen(&mut self) -> u32 {
-        self.state =
-            ((A as u64 * self.state as u64 + C as u64) % M as u64) as u32;
+        self.state = (A * self.state + C) % M;
 
-        // Return 30 LSB, as per glibc implementation
-        self.state & 0x3FFF_FFFF
+        // Safe to cast because of modulo
+        self.state as u32
     }
 
     pub fn gen_range<R: RangeBounds<u32>>(&mut self, range: R) -> u32 {
