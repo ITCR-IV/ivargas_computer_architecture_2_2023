@@ -19,4 +19,20 @@ impl UniformRng {
         // Return 30 LSB, as per glibc implementation
         self.state & 0x3FFF_FFFF
     }
+
+    pub fn gen_range<R: RangeBounds<u32>>(&mut self, range: R) -> u32 {
+        let inclusive_min = match range.start_bound() {
+            Bound::Included(&min) => min,
+            Bound::Excluded(&min) => min + 1,
+            Bound::Unbounded => 0,
+        };
+
+        let inclusive_max = match range.end_bound() {
+            Bound::Included(&max) => max,
+            Bound::Excluded(&max) => max - 1,
+            Bound::Unbounded => 0,
+        };
+
+        (self.gen() % (inclusive_max - inclusive_min + 1)) + inclusive_min
+    }
 }
