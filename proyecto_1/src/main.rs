@@ -1,11 +1,8 @@
-// hide console window on Windows in release
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod random;
+mod constants;
+mod app;
 
 use app::AppState;
-
-pub mod random;
-pub mod constants;
-mod app;
 
 fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
