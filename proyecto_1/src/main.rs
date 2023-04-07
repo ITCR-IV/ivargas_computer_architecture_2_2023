@@ -1,6 +1,7 @@
-mod random;
-mod constants;
 mod app;
+mod constants;
+mod models;
+mod random;
 
 use app::AppState;
 
