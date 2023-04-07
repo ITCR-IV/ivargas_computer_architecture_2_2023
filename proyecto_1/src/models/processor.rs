@@ -1,7 +1,3 @@
-use crate::{
-    app::Event,
-    models::{BusSignal, Cache, Data, Instruction},
-};
 use std::{
     sync::{
         mpsc::{
@@ -10,6 +6,11 @@ use std::{
         Arc, Mutex,
     },
     thread,
+};
+
+use crate::{
+    app::Event,
+    models::{bus::BusSignal, cache::Cache, instructions::Instruction, Data},
 };
 
 pub struct Processor {

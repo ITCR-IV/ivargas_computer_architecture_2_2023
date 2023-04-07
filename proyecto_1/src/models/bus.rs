@@ -1,6 +1,6 @@
 use std::sync::mpsc::{Receiver, SyncSender};
 
-use crate::models::{Data, Processor};
+use crate::models::{processor::Processor, Data};
 
 pub enum BusSignal {}
 pub struct Bus {
