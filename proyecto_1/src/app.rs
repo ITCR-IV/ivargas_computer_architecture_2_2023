@@ -1,5 +1,8 @@
 use eframe::egui::{self, Id, Rgba, Ui};
-use std::time::{Duration, Instant};
+use std::{
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
+};
 
 use crate::{constants::*, random::UniformRng};
 
@@ -9,6 +12,19 @@ enum ExecutionMode {
     Manual,
 }
 
+#[derive(Clone)]
+struct GuiCache {}
+
+impl GuiCache {
+    pub fn new() -> Self { Self {} }
+}
+
+struct GuiMemory {}
+
+impl GuiMemory {
+    fn new() -> Self { Self {} }
+}
+
 pub struct AppState {
     rng: UniformRng,
     nums: Vec<u32>,
@@ -16,10 +32,21 @@ pub struct AppState {
     speed: f32,
     previous_time: Instant,
     ctx: egui::Context,
+    events_rx: Receiver<Event>,
+
+    // These are different from the real system's memories, they're used for
+    // the GUI to keep track of the current state of things
+    caches: Vec<GuiCache>,
+    main_memory: GuiMemory,
 }
 
+pub enum Event {}
+
 impl AppState {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        events_rx: Receiver<Event>,
+    ) -> Self {
         let mut style: egui::Style = (*cc.egui_ctx.style()).clone();
         style.spacing.item_spacing = egui::vec2(10.0, 5.0);
         style.animation_time = 1.0;
@@ -32,6 +59,9 @@ impl AppState {
             speed: 1.0,
             previous_time: Instant::now(),
             ctx: cc.egui_ctx.clone(),
+            events_rx,
+            caches: vec![GuiCache::new(); NUM_PROCESSORS],
+            main_memory: GuiMemory::new(),
         }
     }
 

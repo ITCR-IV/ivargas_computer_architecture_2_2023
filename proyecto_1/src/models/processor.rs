@@ -1,14 +1,18 @@
-use crate::models::{BusSignal, Cache, Data, Instruction};
+use crate::{
+    app::Event,
+    models::{BusSignal, Cache, Data, Instruction},
+};
 use std::{
     sync::{
-        mpsc::{sync_channel, Receiver, RecvError, SyncSender, TryRecvError},
+        mpsc::{
+            sync_channel, Receiver, RecvError, Sender, SyncSender, TryRecvError,
+        },
         Arc, Mutex,
     },
     thread,
 };
 
 pub struct Processor {
-    local_cache: Arc<Mutex<Cache>>,
     controller_signal_input: SyncSender<BusSignal>,
     cpu_instruction_input: SyncSender<Instruction>,
     cpu_data_input: SyncSender<Data>,
@@ -31,7 +35,11 @@ fn controller_disconnect_panic() -> ! {
 fn cpu_disconnect_panic() -> ! { panic!("CPU's channel disconnected") }
 
 impl Processor {
-    pub fn new(bus_sender: SyncSender<BusSignal>, cache: Cache) -> Processor {
+    pub fn init(
+        bus_sender: SyncSender<BusSignal>,
+        cache: Cache,
+        gui_sender: Sender<Event>,
+    ) -> Processor {
         let (cpu_instruction_tx, cpu_instruction_rx) = sync_channel(1);
         let (cpu_data_tx, cpu_data_rx) = sync_channel(0);
         let (controller_tx, controller_rx) = sync_channel(0);
@@ -46,6 +54,7 @@ impl Processor {
                     cpu_instruction_rx,
                     cpu_data_rx,
                     bus_sender.clone(),
+                    gui_sender.clone(),
                 )
             });
         }
@@ -58,7 +67,6 @@ impl Processor {
         }
 
         Processor {
-            local_cache,
             cpu_data_input: cpu_data_tx,
             cpu_instruction_input: cpu_instruction_tx,
             controller_signal_input: controller_tx,
@@ -67,6 +75,10 @@ impl Processor {
 
     pub fn cpu_instruction_input(&self) -> SyncSender<Instruction> {
         self.cpu_instruction_input.clone()
+    }
+
+    pub fn cpu_data_input(&self) -> SyncSender<Data> {
+        self.cpu_data_input.clone()
     }
 
     pub fn controller_signal_input(&self) -> SyncSender<BusSignal> {
@@ -78,6 +90,7 @@ impl Processor {
         instruction_rx: Receiver<Instruction>,
         data_rx: Receiver<Data>,
         bus_tx: SyncSender<BusSignal>,
+        gui_sender: Sender<Event>,
     ) {
         loop {
             match instruction_rx.recv() {
