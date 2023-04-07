@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{constants::*, random::UniformRng};
+use crate::{constants::*, models::system::SoC, random::UniformRng};
 
 #[derive(Debug, PartialEq)]
 enum ExecutionMode {
@@ -26,6 +26,7 @@ impl GuiMemory {
 }
 
 pub struct AppState {
+    system: SoC,
     rng: UniformRng,
     nums: Vec<u32>,
     mode: ExecutionMode,
@@ -46,6 +47,7 @@ impl AppState {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         events_rx: Receiver<Event>,
+        system: SoC,
     ) -> Self {
         let mut style: egui::Style = (*cc.egui_ctx.style()).clone();
         style.spacing.item_spacing = egui::vec2(10.0, 5.0);
@@ -53,6 +55,7 @@ impl AppState {
         cc.egui_ctx.set_style(style);
 
         Self {
+            system,
             rng: UniformRng::from_seed(0),
             nums: vec![0; NUM_PROCESSORS],
             mode: ExecutionMode::Automatic,

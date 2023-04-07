@@ -8,7 +8,11 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(gui_sender: Sender<Event>) -> Self {
+    pub fn new(
+        associativity: usize,
+        sets: usize,
+        gui_sender: Sender<Event>,
+    ) -> Self {
         Self { gui_tx: gui_sender }
     }
 }
