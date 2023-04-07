@@ -1,4 +1,6 @@
+#![feature(mutex_unlock)]
 mod app;
+
 mod constants;
 mod models;
 mod random;
