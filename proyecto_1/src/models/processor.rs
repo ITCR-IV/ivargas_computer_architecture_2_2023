@@ -29,12 +29,6 @@ fn cpu_execute_instruction(
 ) {
 }
 
-fn controller_disconnect_panic() -> ! {
-    panic!("Controller's channel disconnected")
-}
-
-fn cpu_disconnect_panic() -> ! { panic!("CPU's channel disconnected") }
-
 impl Processor {
     pub fn init(
         bus_sender: SyncSender<BusSignal>,
@@ -104,7 +98,7 @@ impl Processor {
                         &data_rx,
                     )
                 }
-                Err(RecvError) => cpu_disconnect_panic(),
+                Err(RecvError) => break,
             }
         }
     }
@@ -118,9 +112,7 @@ impl Processor {
         loop {
             match controller_rx.try_recv() {
                 Ok(signal) => controller_handle_signal(signal, &mut cache), // Handle signal
-                Err(TryRecvError::Disconnected) => {
-                    controller_disconnect_panic()
-                }
+                Err(TryRecvError::Disconnected) => break,
                 Err(TryRecvError::Empty) => {
                     Mutex::unlock(cache);
                     match controller_rx.recv() {
@@ -128,7 +120,7 @@ impl Processor {
                             cache = cache_lock.lock().unwrap();
                             controller_handle_signal(signal, &mut cache)
                         }
-                        Err(RecvError) => controller_disconnect_panic(),
+                        Err(RecvError) => break,
                     }
                 }
             }

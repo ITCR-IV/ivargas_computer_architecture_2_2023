@@ -23,5 +23,6 @@ impl Bus {
         self.data_inputs.push(processor.cpu_data_input());
     }
 
+    // This will panick on error but threads should just silently die i think
     pub fn recv_signal(&self) -> BusSignal { self.bus_input.recv().unwrap() }
 }
