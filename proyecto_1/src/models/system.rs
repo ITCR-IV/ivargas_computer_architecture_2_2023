@@ -30,12 +30,10 @@ impl SoC {
         let main_memory =
             Memory::new(props.main_memory_blocks, gui_sender.clone());
 
-        for _ in 0..props.num_processors {
-            let cache = Cache::new(
-                props.cache_associativity,
-                props.cache_sets,
-                gui_sender.clone(),
-            );
+        for i in 0..props.num_processors {
+            let mut cache =
+                Cache::new_cold(i, props.cache_associativity, props.cache_sets);
+            cache.register_gui_listener(gui_sender.clone());
             let processor =
                 Processor::init(bus_tx.clone(), cache, gui_sender.clone());
             bus.register_processor(&processor);

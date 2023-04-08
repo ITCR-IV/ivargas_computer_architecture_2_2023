@@ -4,7 +4,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{constants::*, models::system::SoC, random::UniformRng};
+use crate::{
+    constants::*,
+    models::{cache::CacheLine, system::SoC, Data},
+    random::UniformRng,
+};
 
 #[derive(Debug, PartialEq)]
 enum ExecutionMode {
@@ -12,18 +16,8 @@ enum ExecutionMode {
     Manual,
 }
 
-#[derive(Clone)]
-struct GuiCache {}
-
-impl GuiCache {
-    pub fn new() -> Self { Self {} }
-}
-
-struct GuiMemory {}
-
-impl GuiMemory {
-    fn new() -> Self { Self {} }
-}
+type GuiCache = Vec<CacheLine>;
+type GuiMemory = Vec<Data>;
 
 pub struct AppState {
     system: SoC,
@@ -55,15 +49,15 @@ impl AppState {
         cc.egui_ctx.set_style(style);
 
         Self {
+            nums: vec![0; system.num_processors()],
+            caches: vec![GuiCache::new(); system.num_processors()],
             system,
             rng: UniformRng::from_seed(0),
-            nums: vec![0; NUM_PROCESSORS],
             mode: ExecutionMode::Automatic,
             speed: 1.0,
             previous_time: Instant::now(),
             ctx: cc.egui_ctx.clone(),
             events_rx,
-            caches: vec![GuiCache::new(); NUM_PROCESSORS],
             main_memory: GuiMemory::new(),
         }
     }

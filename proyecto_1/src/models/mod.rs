@@ -5,4 +5,4 @@ pub mod main_memory;
 pub mod processor;
 pub mod system;
 
-type Data = u16;
+pub type Data = u16;
