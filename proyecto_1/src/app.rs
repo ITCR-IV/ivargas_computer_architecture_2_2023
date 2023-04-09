@@ -93,7 +93,10 @@ impl AppState {
             x >>= 1;
             address_bits += 1;
         }
-        address_bits <<= offset_bits;
+        address_bits += offset_bits;
+        println!("Address bits {address_bits}");
+        println!("offset bits {offset_bits}");
+        println!("index bits {index_bits}");
 
         Self {
             nums: vec![0; system.num_processors()],
@@ -185,7 +188,8 @@ impl AppState {
     fn draw_cache(&self, i: usize, ui: &mut Ui) {
         let spacing = self.ctx.style().spacing.item_spacing;
 
-        let address_width = (self.address_bits / 4) + 1 + 2;
+        let address_width =
+            (self.address_bits / 4) + 2 + (self.address_bits % 4 > 0) as usize;
         let data_width = size_of::<Data>() * 2 + 2;
 
         let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
@@ -335,7 +339,8 @@ impl AppState {
     fn draw_memory(&mut self, ui: &mut Ui) {
         let spacing = self.ctx.style().spacing.item_spacing;
 
-        let address_width = (self.address_bits / 4) + 1 + 2;
+        let address_width =
+            (self.address_bits / 4) + 2 + (self.address_bits % 4 > 0) as usize;
         let data_width = size_of::<Data>() * 2 + 2;
 
         let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
