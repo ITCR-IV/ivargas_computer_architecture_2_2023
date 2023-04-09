@@ -51,7 +51,7 @@ pub enum Event {
         line: CacheLine,
     },
     MemWrite {
-        mem_line: usize,
+        block_i: usize,
         data: Data,
     },
     // Assumes a miss
@@ -94,9 +94,6 @@ impl AppState {
             address_bits += 1;
         }
         address_bits += offset_bits;
-        println!("Address bits {address_bits}");
-        println!("offset bits {offset_bits}");
-        println!("index bits {index_bits}");
 
         Self {
             nums: vec![0; system.num_processors()],
@@ -498,9 +495,9 @@ impl eframe::App for AppState {
                         true,
                     );
                 }
-                Event::MemWrite { mem_line, data } => {
-                    self.main_memory[mem_line] = data;
-                    self.ctx.animate_bool(self.get_mem_line_id(mem_line), true);
+                Event::MemWrite { block_i, data } => {
+                    self.main_memory[block_i] = data;
+                    self.ctx.animate_bool(self.get_mem_line_id(block_i), true);
                 }
                 Event::Alert {
                     processor_i: _,

@@ -27,8 +27,8 @@ impl SoC {
 
         let mut processors = Vec::with_capacity(props.num_processors);
         let mut bus = Bus::new(bus_rx);
-        let main_memory =
-            Memory::new(props.main_memory_blocks, gui_sender.clone());
+        let mut main_memory = Memory::new(props.main_memory_blocks);
+        main_memory.register_gui_listener(gui_sender.clone());
 
         for i in 0..props.num_processors {
             let mut cache =

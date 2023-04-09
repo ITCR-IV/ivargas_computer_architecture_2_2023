@@ -2,7 +2,7 @@ use std::{mem::size_of, slice::SliceIndex, sync::mpsc::Sender};
 
 use crate::{app::Event, models::Data};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CacheState {
     Modified,
     Owned,
@@ -127,6 +127,15 @@ impl Cache {
     }
 
     pub fn store_line(&mut self, block_index: usize, line: CacheLine) {
+        if let Some(ref sender) = self.gui_tx {
+            sender
+                .send(Event::CacheWrite {
+                    cache_i: self.processor_id,
+                    block_i: block_index,
+                    line: line.clone(),
+                })
+                .ok();
+        }
         self.storage[block_index] = line;
     }
 }
