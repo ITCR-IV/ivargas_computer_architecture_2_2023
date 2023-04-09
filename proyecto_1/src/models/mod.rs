@@ -6,3 +6,8 @@ pub mod processor;
 pub mod system;
 
 pub type Data = u16;
+
+pub enum MemOp {
+    Write,
+    Read,
+}

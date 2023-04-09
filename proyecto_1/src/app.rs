@@ -4,18 +4,17 @@ use eframe::{
 };
 use std::{
     mem::size_of,
-    sync::mpsc::Receiver,
+    sync::mpsc::{Receiver, TryRecvError},
     time::{Duration, Instant},
 };
 
 use crate::{
-    models::{cache::CacheLine, system::SoC, Data},
+    models::{cache::CacheLine, system::SoC, Data, MemOp},
     random::UniformRng,
 };
 
 const PROCESSORS_PER_ROW: usize = 2;
 const PROCESSORS_HEIGHT_PERCENT: f32 = 0.66;
-const MEMORY_HEIGHT_PERCENT: f32 = 1.0 - PROCESSORS_HEIGHT_PERCENT;
 
 #[derive(Debug, PartialEq)]
 enum ExecutionMode {
@@ -52,8 +51,13 @@ pub enum Event {
         line: CacheLine,
     },
     MemWrite {
-        address: usize,
+        mem_line: usize,
         data: Data,
+    },
+    // Assumes a miss
+    Alert {
+        processor_i: usize,
+        op: MemOp,
     },
 }
 
@@ -476,6 +480,34 @@ impl AppState {
 
 impl eframe::App for AppState {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        match self.events_rx.try_recv() {
+            Ok(event) => match event {
+                Event::CacheWrite {
+                    cache_i,
+                    block_i,
+                    line,
+                } => {
+                    self.caches[cache_i][block_i] = line;
+                    self.ctx.animate_bool(
+                        self.get_cache_line_id(cache_i, block_i),
+                        true,
+                    );
+                }
+                Event::MemWrite { mem_line, data } => {
+                    self.main_memory[mem_line] = data;
+                    self.ctx.animate_bool(self.get_mem_line_id(mem_line), true);
+                }
+                Event::Alert {
+                    processor_i: _,
+                    op: _,
+                } => todo!(),
+            },
+            Err(TryRecvError::Empty) => (),
+            Err(TryRecvError::Disconnected) => {
+                panic!("One of the system threads died unexpectedly")
+            }
+        }
+
         egui::SidePanel::right("controls_panel").show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| self.controls_panel(ui))
         });
