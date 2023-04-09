@@ -110,6 +110,10 @@ impl AppState {
     fn get_processor_id(&self, i: usize) -> Id {
         Id::new(format!("cpu_id_{}", i))
     }
+
+    fn get_cache_line_id(&self, cache_i: usize, line_i: usize) -> Id {
+        Id::new(format!("cache_line_id_{cache_i}_{line_i}"))
+    }
 }
 
 impl AppState {
@@ -163,11 +167,26 @@ impl AppState {
         let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
         let default_color = ui.visuals().text_color();
 
+        const STATE_HEADER: &str = "State";
+        const ADDRESS_HEADER: &str = "Address";
+        const DATA_HEADER: &str = "Data";
+        const HEADERS: [&str; 3] = [STATE_HEADER, ADDRESS_HEADER, DATA_HEADER];
+
         let consultant_painter = ui.painter();
 
         let letter_size = consultant_painter
-            .layout_no_wrap("M".to_string(), font_id.clone(), default_color)
+            .layout_no_wrap("M".to_owned(), font_id.clone(), default_color)
             .rect;
+        let state_header_width = consultant_painter
+            .layout_no_wrap(
+                STATE_HEADER.to_owned(),
+                font_id.clone(),
+                default_color,
+            )
+            .rect
+            .width();
+        let state_max_width = letter_size.width().max(state_header_width);
+
         let data_text_width = consultant_painter
             .layout_no_wrap(
                 format!("{:#0data_width$X}", 0),
@@ -176,6 +195,16 @@ impl AppState {
             )
             .rect
             .width();
+        let data_header_width = consultant_painter
+            .layout_no_wrap(
+                DATA_HEADER.to_owned(),
+                font_id.clone(),
+                default_color,
+            )
+            .rect
+            .width();
+        let data_max_width = data_text_width.max(data_header_width);
+
         let address_text_width = consultant_painter
             .layout_no_wrap(
                 format!("{:#0address_width$X}", 0),
@@ -184,13 +213,22 @@ impl AppState {
             )
             .rect
             .width();
+        let address_header_width = consultant_painter
+            .layout_no_wrap(
+                ADDRESS_HEADER.to_owned(),
+                font_id.clone(),
+                default_color,
+            )
+            .rect
+            .width();
+        let address_max_width = address_text_width.max(address_header_width);
 
-        let grid_width = letter_size.width()
-            + data_text_width
-            + address_text_width
+        let grid_width = state_max_width
+            + data_max_width
+            + address_max_width
             + spacing.x * 6.0;
         let grid_height = (letter_size.height() + spacing.y * 2.0)
-            * self.caches[i].len() as f32;
+            * (self.caches[i].len() + 1) as f32;
         let grid_size = Vec2 {
             x: grid_width,
             y: grid_height,
@@ -210,56 +248,89 @@ impl AppState {
         let rounding = ui.visuals().window_rounding;
         painter.rect_stroke(grid_rect, rounding, stroke);
         painter.vline(
-            grid_rect.left() + letter_size.width() + spacing.x * 2.0,
+            grid_rect.left() + state_max_width + spacing.x * 2.0,
             grid_rect.y_range(),
             stroke,
         );
         painter.vline(
             grid_rect.left()
-                + letter_size.width()
-                + address_text_width
+                + state_max_width
+                + address_max_width
                 + spacing.x * 4.0,
             grid_rect.y_range(),
             stroke,
         );
 
-        for (i, cache_line) in self.caches[i].iter().enumerate() {
-            let index = i / self.system.cache_associativity();
+        let mut x_locs: [f32; 3] = [
+            grid_rect.left() + spacing.x,
+            grid_rect.left() + spacing.x * 3.0 + state_max_width,
+            grid_rect.left()
+                + state_max_width
+                + address_max_width
+                + spacing.x * 5.0,
+        ];
+        let y = grid_rect.top() + spacing.y;
+
+        for (header, x) in HEADERS.iter().zip(x_locs) {
+            painter.text(
+                Pos2 { x, y },
+                Align2::LEFT_TOP,
+                header,
+                font_id.clone(),
+                default_color,
+            );
+        }
+
+        painter.hline(
+            grid_rect.x_range(),
+            grid_rect.top() + 2.0 * spacing.y + letter_size.height(),
+            stroke,
+        );
+
+        // center columns
+        x_locs[0] += (state_max_width - letter_size.width()) / 2.0;
+        x_locs[1] += (address_max_width - address_text_width) / 2.0;
+        x_locs[2] += (data_max_width - data_text_width) / 2.0;
+
+        for (line_i, cache_line) in self.caches[i].iter().enumerate() {
+            let red_portion = self
+                .ctx
+                .animate_bool(self.get_cache_line_id(i, line_i), false);
+            let default_color: Rgba = default_color.into();
+            let mixed_color =
+                default_color * (1.0 - red_portion) + Rgba::RED * red_portion;
+            let text_color: Color32 = mixed_color.into();
+
+            let index = line_i / self.system.cache_associativity();
             let address = ((cache_line.tag << self.index_bits) | index)
                 << self.offset_bits;
 
             let y = grid_rect.top()
-                + spacing.y * (i * 2 + 1) as f32
-                + letter_size.height() * i as f32;
-            let x = grid_rect.left() + spacing.x;
+                + spacing.y * ((line_i + 1) * 2 + 1) as f32
+                + letter_size.height() * (line_i + 1) as f32;
 
             painter.text(
-                Pos2 { x, y },
+                Pos2 { x: x_locs[0], y },
                 Align2::LEFT_TOP,
                 cache_line.state.to_letter(),
                 font_id.clone(),
-                default_color,
+                text_color,
             );
 
-            let x = grid_rect.left() + spacing.x * 3.0 + letter_size.width();
             painter.text(
-                Pos2 { x, y },
+                Pos2 { x: x_locs[1], y },
                 Align2::LEFT_TOP,
                 format!("{:#0address_width$X}", address),
                 font_id.clone(),
-                default_color,
+                text_color,
             );
 
-            let x = grid_rect.left()
-                + letter_size.width()
-                + address_text_width
-                + spacing.x * 5.0;
             painter.text(
-                Pos2 { x, y },
+                Pos2 { x: x_locs[2], y },
                 Align2::LEFT_TOP,
                 format!("{:#0data_width$X}", cache_line.data),
                 font_id.clone(),
-                default_color,
+                text_color,
             );
         }
     }
