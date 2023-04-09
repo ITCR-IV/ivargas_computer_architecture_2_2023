@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{self, Align2, Id, Rect, Rgba, Sense, TextStyle, Ui},
+    egui::{self, Align2, Id, Rgba, Sense, TextStyle, Ui},
     epaint::{Color32, Pos2, Vec2},
 };
 use std::{
@@ -9,7 +9,6 @@ use std::{
 };
 
 use crate::{
-    constants::*,
     models::{cache::CacheLine, system::SoC, Data},
     random::UniformRng,
 };
@@ -46,7 +45,17 @@ pub struct AppState {
     address_bits: usize,
 }
 
-pub enum Event {}
+pub enum Event {
+    CacheWrite {
+        cache_i: usize,
+        block_i: usize,
+        line: CacheLine,
+    },
+    MemWrite {
+        address: usize,
+        data: Data,
+    },
+}
 
 impl AppState {
     pub fn new(
@@ -91,6 +100,7 @@ impl AppState {
                 ];
                 system.num_processors()
             ],
+            main_memory: vec![0; system.main_memory_size()],
             system,
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Automatic,
@@ -98,7 +108,6 @@ impl AppState {
             previous_time: Instant::now(),
             ctx: cc.egui_ctx.clone(),
             events_rx,
-            main_memory: GuiMemory::new(),
             offset_bits,
             index_bits,
             address_bits,
@@ -120,6 +129,10 @@ impl AppState {
 
     fn get_cache_line_id(&self, cache_i: usize, line_i: usize) -> Id {
         Id::new(format!("cache_line_id_{cache_i}_{line_i}"))
+    }
+
+    fn get_mem_line_id(&self, line_i: usize) -> Id {
+        Id::new(format!("main_memory_line_id__{line_i}"))
     }
 }
 
@@ -184,50 +197,23 @@ impl AppState {
         let letter_size = consultant_painter
             .layout_no_wrap("M".to_owned(), font_id.clone(), default_color)
             .rect;
-        let state_header_width = consultant_painter
-            .layout_no_wrap(
-                STATE_HEADER.to_owned(),
-                font_id.clone(),
-                default_color,
-            )
-            .rect
-            .width();
+
+        let get_width = |text| {
+            consultant_painter
+                .layout_no_wrap(text, font_id.clone(), default_color)
+                .rect
+                .width()
+        };
+
+        let state_header_width = get_width(STATE_HEADER.to_owned());
         let state_max_width = letter_size.width().max(state_header_width);
 
-        let data_text_width = consultant_painter
-            .layout_no_wrap(
-                format!("{:#0data_width$X}", 0),
-                font_id.clone(),
-                default_color,
-            )
-            .rect
-            .width();
-        let data_header_width = consultant_painter
-            .layout_no_wrap(
-                DATA_HEADER.to_owned(),
-                font_id.clone(),
-                default_color,
-            )
-            .rect
-            .width();
+        let data_text_width = get_width(format!("{:#0data_width$X}", 0));
+        let data_header_width = get_width(DATA_HEADER.to_owned());
         let data_max_width = data_text_width.max(data_header_width);
 
-        let address_text_width = consultant_painter
-            .layout_no_wrap(
-                format!("{:#0address_width$X}", 0),
-                font_id.clone(),
-                default_color,
-            )
-            .rect
-            .width();
-        let address_header_width = consultant_painter
-            .layout_no_wrap(
-                ADDRESS_HEADER.to_owned(),
-                font_id.clone(),
-                default_color,
-            )
-            .rect
-            .width();
+        let address_text_width = get_width(format!("{:#0address_width$X}", 0));
+        let address_header_width = get_width(ADDRESS_HEADER.to_owned());
         let address_max_width = address_text_width.max(address_header_width);
 
         let grid_width = state_max_width
@@ -342,6 +328,125 @@ impl AppState {
         }
     }
 
+    fn draw_memory(&mut self, ui: &mut Ui) {
+        let spacing = self.ctx.style().spacing.item_spacing;
+
+        let address_width = (self.address_bits / 4) + 1 + 2;
+        let data_width = size_of::<Data>() * 2 + 2;
+
+        let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
+        let default_color = ui.visuals().text_color();
+
+        const ADDRESS_HEADER: &str = "Address";
+        const DATA_HEADER: &str = "Data";
+        const HEADERS: [&str; 2] = [ADDRESS_HEADER, DATA_HEADER];
+
+        let consultant_painter = ui.painter();
+
+        let letter_size = consultant_painter
+            .layout_no_wrap("M".to_owned(), font_id.clone(), default_color)
+            .rect;
+
+        let get_width = |text| {
+            consultant_painter
+                .layout_no_wrap(text, font_id.clone(), default_color)
+                .rect
+                .width()
+        };
+
+        let data_text_width = get_width(format!("{:#0data_width$X}", 0));
+        let data_header_width = get_width(DATA_HEADER.to_owned());
+        let data_max_width = data_text_width.max(data_header_width);
+
+        let address_text_width = get_width(format!("{:#0address_width$X}", 0));
+        let address_header_width = get_width(ADDRESS_HEADER.to_owned());
+        let address_max_width = address_text_width.max(address_header_width);
+
+        let grid_width = data_max_width + address_max_width + spacing.x * 4.0;
+        let grid_height = (letter_size.height() + spacing.y * 2.0)
+            * (self.main_memory.len() + 1) as f32;
+        let grid_size = Vec2 {
+            x: grid_width,
+            y: grid_height,
+        };
+
+        let (response, painter) = ui.allocate_painter(
+            grid_size,
+            Sense {
+                click: false,
+                drag: false,
+                focusable: false,
+            },
+        );
+        let grid_rect = response.rect;
+
+        let stroke = ui.visuals().window_stroke;
+        let rounding = ui.visuals().window_rounding;
+        painter.rect_stroke(grid_rect, rounding, stroke);
+        painter.vline(
+            grid_rect.left() + address_max_width + spacing.x * 2.0,
+            grid_rect.y_range(),
+            stroke,
+        );
+
+        let mut x_locs: [f32; 2] = [
+            grid_rect.left() + spacing.x,
+            grid_rect.left() + address_max_width + spacing.x * 3.0,
+        ];
+        let y = grid_rect.top() + spacing.y;
+
+        for (header, x) in HEADERS.iter().zip(x_locs) {
+            painter.text(
+                Pos2 { x, y },
+                Align2::LEFT_TOP,
+                header,
+                font_id.clone(),
+                default_color,
+            );
+        }
+
+        painter.hline(
+            grid_rect.x_range(),
+            grid_rect.top() + 2.0 * spacing.y + letter_size.height(),
+            stroke,
+        );
+
+        // center columns
+        x_locs[0] += (address_max_width - address_text_width) / 2.0;
+        x_locs[1] += (data_max_width - data_text_width) / 2.0;
+
+        for (i, data) in self.main_memory.iter().enumerate() {
+            let red_portion =
+                self.ctx.animate_bool(self.get_mem_line_id(i), false);
+            let default_color: Rgba = default_color.into();
+            let mixed_color =
+                default_color * (1.0 - red_portion) + Rgba::RED * red_portion;
+            let text_color: Color32 = mixed_color.into();
+
+            let address = i << self.offset_bits;
+
+            let y = grid_rect.top()
+                + spacing.y * ((i + 1) * 2 + 1) as f32
+                + letter_size.height() * (i + 1) as f32;
+
+            painter.text(
+                Pos2 { x: x_locs[0], y },
+                Align2::LEFT_TOP,
+                format!("{:#0address_width$X}", address),
+                font_id.clone(),
+                text_color,
+            );
+
+            painter.text(
+                Pos2 { x: x_locs[1], y },
+                Align2::LEFT_TOP,
+                format!("{:#0data_width$X}", data),
+                font_id.clone(),
+                text_color,
+            );
+        }
+    }
+
     fn draw_processor(&mut self, i: usize, ui: &mut Ui) {
         let spacing = self.ctx.style().spacing.item_spacing;
         let width = (ui.available_width()
@@ -376,7 +481,7 @@ impl eframe::App for AppState {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::both().show(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.allocate_ui_with_layout(
                     (
                         ui.available_width(),
@@ -393,16 +498,14 @@ impl eframe::App for AppState {
                 );
 
                 ui.allocate_ui_with_layout(
-                    (
-                        ui.available_width(),
-                        ui.available_height() * MEMORY_HEIGHT_PERCENT,
-                    )
-                        .into(),
-                    egui::Layout::centered_and_justified(
-                        egui::Direction::BottomUp,
-                    ),
+                    (ui.available_width(), ui.available_height()).into(),
+                    egui::Layout::top_down(egui::Align::Center),
                     |ui| {
-                        self.draw_processor(0, ui);
+                        ui.group(|ui| {
+                            ui.heading("Mem");
+
+                            self.draw_memory(ui);
+                        });
                     },
                 );
             });
