@@ -14,6 +14,8 @@ use crate::{
     random::UniformRng,
 };
 
+const PROCESSORS_PER_ROW: usize = 2;
+
 #[derive(Debug, PartialEq)]
 enum ExecutionMode {
     Automatic,
@@ -102,7 +104,10 @@ impl AppState {
     }
 
     fn update_random_processor(&mut self, num: u32) {
-        let i = self.rng.gen_range(0u32..NUM_PROCESSORS as u32) as usize;
+        let i = self
+            .rng
+            .gen_range(0u32..self.system.num_processors() as u32)
+            as usize;
         self.nums[i] = num;
         self.ctx.animate_bool(self.get_processor_id(i), true);
     }
@@ -336,32 +341,34 @@ impl AppState {
     }
 
     fn draw_processor(&mut self, i: usize, ui: &mut Ui) {
-        let width = ui.available_width() / NUM_PROCESSORS as f32;
-        let height = ui.available_height();
         let spacing = self.ctx.style().spacing.item_spacing;
+        let width = (ui.available_width()
+            - spacing.x * (PROCESSORS_PER_ROW - 1) as f32)
+            / PROCESSORS_PER_ROW as f32;
+        let height = ui.available_height();
 
-        let max_rect = egui::Rect::from_min_size(
-            // On purpose the spacing isn't divided by 2 so that first block
-            // will get double spacing on the left and last block won't get
-            // spacing on the right, since it's already accounted for
-            (width * i as f32 + spacing.x, spacing.y).into(),
-            (width - spacing.x, height).into(),
-        );
         let layout = egui::Layout::top_down(egui::Align::Center);
 
-        ui.child_ui(max_rect, layout).group(|ui| {
-            ui.heading(format!("CPU{}", i + 1));
+        let rect = ui
+            .allocate_ui_with_layout((width, height).into(), layout, |ui| {
+                ui.group(|ui| {
+                    ui.heading(format!("CPU{}", i + 1));
 
-            let red_portion =
-                self.ctx.animate_bool(self.get_processor_id(i), false);
-            let default_color: Rgba = ui.visuals().text_color().into();
-            let mixed_color =
-                default_color * (1.0 - red_portion) + Rgba::RED * red_portion;
+                    let red_portion =
+                        self.ctx.animate_bool(self.get_processor_id(i), false);
+                    let default_color: Rgba = ui.visuals().text_color().into();
+                    let mixed_color = default_color * (1.0 - red_portion)
+                        + Rgba::RED * red_portion;
 
-            ui.colored_label(mixed_color, format!("{}", self.nums[i]));
+                    ui.colored_label(mixed_color, format!("{}", self.nums[i]));
 
-            self.draw_cache(i, ui);
-        });
+                    self.draw_cache(i, ui);
+                })
+            })
+            .response
+            .rect;
+
+        println!("CPU Rect: {rect:?}");
     }
 }
 
@@ -372,11 +379,13 @@ impl eframe::App for AppState {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                for i in 0..NUM_PROCESSORS {
+            let layout = egui::Layout::left_to_right(egui::Align::Min)
+                .with_main_wrap(true);
+            ui.with_layout(layout, |ui| {
+                for i in 0..self.system.num_processors() {
                     self.draw_processor(i, ui);
                 }
-            });
+            })
         });
     }
 }
