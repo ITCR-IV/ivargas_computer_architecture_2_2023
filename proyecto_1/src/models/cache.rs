@@ -11,6 +11,18 @@ pub enum CacheState {
     Invalid,
 }
 
+impl CacheState {
+    pub fn to_letter(&self) -> &str {
+        match self {
+            CacheState::Modified => "M",
+            CacheState::Owned => "O",
+            CacheState::Exclusive => "E",
+            CacheState::Shared => "S",
+            CacheState::Invalid => "I",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct CacheLine {
     pub state: CacheState,
@@ -54,7 +66,12 @@ impl Cache {
             index_bits += 1;
         }
 
-        let offset_bits = size_of::<Data>();
+        let mut offset_bits = 0;
+        let mut x = size_of::<Data>() - 1;
+        while x != 0 {
+            x >>= 1;
+            offset_bits += 1;
+        }
 
         // u16: 0x0000_0003
         let offset_mask = !(((!0) >> offset_bits) << offset_bits);

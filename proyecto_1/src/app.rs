@@ -1,5 +1,9 @@
-use eframe::egui::{self, Id, Rgba, Ui};
+use eframe::{
+    egui::{self, Align2, Id, Rect, Rgba, Sense, TextStyle, Ui},
+    epaint::{Color32, Pos2, Vec2},
+};
 use std::{
+    mem::size_of,
     sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
@@ -33,6 +37,9 @@ pub struct AppState {
     // the GUI to keep track of the current state of things
     caches: Vec<GuiCache>,
     main_memory: GuiMemory,
+    offset_bits: usize,
+    index_bits: usize,
+    address_bits: usize,
 }
 
 pub enum Event {}
@@ -48,9 +55,38 @@ impl AppState {
         style.animation_time = 1.0;
         cc.egui_ctx.set_style(style);
 
+        // For cache drawing
+        let mut index_bits = 0;
+        let mut x = system.cache_sets() - 1;
+        while x != 0 {
+            x >>= 1;
+            index_bits += 1;
+        }
+
+        let mut offset_bits = 0;
+        let mut x = size_of::<Data>() - 1;
+        while x != 0 {
+            x >>= 1;
+            offset_bits += 1;
+        }
+
+        let mut address_bits = 0;
+        let mut x = system.main_memory_size() - 1;
+        while x != 0 {
+            x >>= 1;
+            address_bits += 1;
+        }
+        address_bits <<= offset_bits;
+
         Self {
             nums: vec![0; system.num_processors()],
-            caches: vec![GuiCache::new(); system.num_processors()],
+            caches: vec![
+                vec![
+                    CacheLine::new_cold();
+                    system.cache_associativity() * system.cache_sets()
+                ];
+                system.num_processors()
+            ],
             system,
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Automatic,
@@ -59,6 +95,9 @@ impl AppState {
             ctx: cc.egui_ctx.clone(),
             events_rx,
             main_memory: GuiMemory::new(),
+            offset_bits,
+            index_bits,
+            address_bits,
         }
     }
 
@@ -115,6 +154,116 @@ impl AppState {
         }
     }
 
+    fn draw_cache(&self, i: usize, ui: &mut Ui) {
+        let spacing = self.ctx.style().spacing.item_spacing;
+
+        let address_width = (self.address_bits / 4) + 1 + 2;
+        let data_width = size_of::<Data>() * 2 + 2;
+
+        let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
+        let default_color = ui.visuals().text_color();
+
+        let consultant_painter = ui.painter();
+
+        let letter_size = consultant_painter
+            .layout_no_wrap("M".to_string(), font_id.clone(), default_color)
+            .rect;
+        let data_text_width = consultant_painter
+            .layout_no_wrap(
+                format!("{:#0data_width$X}", 0),
+                font_id.clone(),
+                default_color,
+            )
+            .rect
+            .width();
+        let address_text_width = consultant_painter
+            .layout_no_wrap(
+                format!("{:#0address_width$X}", 0),
+                font_id.clone(),
+                default_color,
+            )
+            .rect
+            .width();
+
+        let grid_width = letter_size.width()
+            + data_text_width
+            + address_text_width
+            + spacing.x * 6.0;
+        let grid_height = (letter_size.height() + spacing.y * 2.0)
+            * self.caches[i].len() as f32;
+        let grid_size = Vec2 {
+            x: grid_width,
+            y: grid_height,
+        };
+
+        let (response, painter) = ui.allocate_painter(
+            grid_size,
+            Sense {
+                click: false,
+                drag: false,
+                focusable: false,
+            },
+        );
+        let grid_rect = response.rect;
+
+        let stroke = ui.visuals().window_stroke;
+        let rounding = ui.visuals().window_rounding;
+        painter.rect_stroke(grid_rect, rounding, stroke);
+        painter.vline(
+            grid_rect.left() + letter_size.width() + spacing.x * 2.0,
+            grid_rect.y_range(),
+            stroke,
+        );
+        painter.vline(
+            grid_rect.left()
+                + letter_size.width()
+                + address_text_width
+                + spacing.x * 4.0,
+            grid_rect.y_range(),
+            stroke,
+        );
+
+        for (i, cache_line) in self.caches[i].iter().enumerate() {
+            let index = i / self.system.cache_associativity();
+            let address = ((cache_line.tag << self.index_bits) | index)
+                << self.offset_bits;
+
+            let y = grid_rect.top()
+                + spacing.y * (i * 2 + 1) as f32
+                + letter_size.height() * i as f32;
+            let x = grid_rect.left() + spacing.x;
+
+            painter.text(
+                Pos2 { x, y },
+                Align2::LEFT_TOP,
+                cache_line.state.to_letter(),
+                font_id.clone(),
+                default_color,
+            );
+
+            let x = grid_rect.left() + spacing.x * 3.0 + letter_size.width();
+            painter.text(
+                Pos2 { x, y },
+                Align2::LEFT_TOP,
+                format!("{:#0address_width$X}", address),
+                font_id.clone(),
+                default_color,
+            );
+
+            let x = grid_rect.left()
+                + letter_size.width()
+                + address_text_width
+                + spacing.x * 5.0;
+            painter.text(
+                Pos2 { x, y },
+                Align2::LEFT_TOP,
+                format!("{:#0data_width$X}", cache_line.data),
+                font_id.clone(),
+                default_color,
+            );
+        }
+    }
+
     fn draw_processor(&mut self, i: usize, ui: &mut Ui) {
         let width = ui.available_width() / NUM_PROCESSORS as f32;
         let height = ui.available_height();
@@ -139,6 +288,8 @@ impl AppState {
                 default_color * (1.0 - red_portion) + Rgba::RED * red_portion;
 
             ui.colored_label(mixed_color, format!("{}", self.nums[i]));
+
+            self.draw_cache(i, ui);
         });
     }
 }
