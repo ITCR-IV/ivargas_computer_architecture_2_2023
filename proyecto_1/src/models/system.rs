@@ -22,10 +22,11 @@ pub fn init_system(
     props: SocProperties,
     gui_sender: Sender<Event>,
 ) -> Vec<SyncSender<Instruction>> {
-    let (bus_tx, bus_rx) = sync_channel(0);
+    let (bus_signal_tx, bus_signal_rx) = sync_channel(0);
+    let (bus_data_tx, bus_data_rx) = sync_channel(0);
 
     let mut processors = Vec::with_capacity(props.num_processors);
-    let mut bus = Bus::new(bus_rx);
+    let mut bus = Bus::new(bus_signal_rx, bus_data_rx);
     let mut main_memory = Memory::new(props.main_memory_blocks);
     main_memory.register_gui_listener(gui_sender.clone());
 
@@ -33,8 +34,13 @@ pub fn init_system(
         let mut cache =
             Cache::new_cold(i, props.cache_associativity, props.cache_sets);
         cache.register_gui_listener(gui_sender.clone());
-        let processor =
-            Processor::init(i, bus_tx.clone(), cache, gui_sender.clone());
+        let processor = Processor::init(
+            i,
+            bus_signal_tx.clone(),
+            bus_data_tx.clone(),
+            cache,
+            gui_sender.clone(),
+        );
         bus.register_processor(&processor);
         processors.push(processor);
     }

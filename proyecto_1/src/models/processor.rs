@@ -10,29 +10,40 @@ use std::{
 
 use crate::{
     app::Event,
-    models::{bus::BusSignal, cache::Cache, instructions::Instruction, Data},
+    models::{
+        bus::BusSignal,
+        cache::{Cache, CacheState},
+        instructions::Instruction,
+        Data,
+    },
 };
 
 pub struct Processor {
     controller_signal_input: SyncSender<BusSignal>,
     cpu_instruction_input: SyncSender<Instruction>,
-    cpu_data_input: SyncSender<Data>,
+    cpu_data_input: SyncSender<(CacheState, Data)>,
 }
 
-fn controller_handle_signal(signal: BusSignal, cache: &mut Cache) {}
+fn controller_handle_signal(
+    signal: BusSignal,
+    cache: &mut Cache,
+    bus_tx: &SyncSender<Option<Data>>,
+) {
+}
 
 fn cpu_execute_instruction(
     instruction: Instruction,
     cache: &mut Cache,
     bus_tx: &SyncSender<BusSignal>,
-    data_rx: &Receiver<Data>,
+    data_rx: &Receiver<(CacheState, Data)>,
 ) {
 }
 
 impl Processor {
     pub fn init(
         processor_i: usize,
-        bus_sender: SyncSender<BusSignal>,
+        bus_signal_sender: SyncSender<BusSignal>,
+        bus_data_sender: SyncSender<Option<Data>>,
         cache: Cache,
         gui_sender: Sender<Event>,
     ) -> Processor {
@@ -50,8 +61,8 @@ impl Processor {
                     cache_lock,
                     cpu_instruction_rx,
                     cpu_data_rx,
-                    bus_sender.clone(),
-                    gui_sender.clone(),
+                    bus_signal_sender,
+                    gui_sender,
                 )
             });
         }
@@ -59,7 +70,12 @@ impl Processor {
         {
             let cache_lock = local_cache.clone();
             thread::spawn(move || {
-                Self::controller_thread(processor_i, cache_lock, controller_rx)
+                Self::controller_thread(
+                    processor_i,
+                    cache_lock,
+                    controller_rx,
+                    bus_data_sender,
+                )
             });
         }
 
@@ -74,7 +90,7 @@ impl Processor {
         self.cpu_instruction_input.clone()
     }
 
-    pub fn cpu_data_input(&self) -> SyncSender<Data> {
+    pub fn cpu_data_input(&self) -> SyncSender<(CacheState, Data)> {
         self.cpu_data_input.clone()
     }
 
@@ -86,7 +102,7 @@ impl Processor {
         processor_i: usize,
         cache_lock: Arc<Mutex<Cache>>,
         instruction_rx: Receiver<Instruction>,
-        data_rx: Receiver<Data>,
+        data_rx: Receiver<(CacheState, Data)>,
         bus_tx: SyncSender<BusSignal>,
         gui_sender: Sender<Event>,
     ) {
@@ -113,19 +129,24 @@ impl Processor {
         processor_i: usize,
         cache_lock: Arc<Mutex<Cache>>,
         controller_rx: Receiver<BusSignal>,
+        bus_tx: SyncSender<Option<Data>>,
     ) {
         let mut cache = cache_lock.lock().unwrap();
 
         loop {
             match controller_rx.try_recv() {
-                Ok(signal) => controller_handle_signal(signal, &mut cache), // Handle signal
+                Ok(signal) => {
+                    controller_handle_signal(signal, &mut cache, &bus_tx)
+                } // Handle signal
                 Err(TryRecvError::Disconnected) => break,
                 Err(TryRecvError::Empty) => {
                     Mutex::unlock(cache);
                     match controller_rx.recv() {
                         Ok(signal) => {
                             cache = cache_lock.lock().unwrap();
-                            controller_handle_signal(signal, &mut cache)
+                            controller_handle_signal(
+                                signal, &mut cache, &bus_tx,
+                            )
                         }
                         //Err(RecvError) => break,
                         Err(RecvError) => {
