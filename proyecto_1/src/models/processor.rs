@@ -31,6 +31,7 @@ fn cpu_execute_instruction(
 
 impl Processor {
     pub fn init(
+        processor_i: usize,
         bus_sender: SyncSender<BusSignal>,
         cache: Cache,
         gui_sender: Sender<Event>,
@@ -45,6 +46,7 @@ impl Processor {
             let cache_lock = local_cache.clone();
             thread::spawn(move || {
                 Self::cpu_thread(
+                    processor_i,
                     cache_lock,
                     cpu_instruction_rx,
                     cpu_data_rx,
@@ -57,7 +59,7 @@ impl Processor {
         {
             let cache_lock = local_cache.clone();
             thread::spawn(move || {
-                Self::controller_thread(cache_lock, controller_rx)
+                Self::controller_thread(processor_i, cache_lock, controller_rx)
             });
         }
 
@@ -81,6 +83,7 @@ impl Processor {
     }
 
     fn cpu_thread(
+        processor_i: usize,
         cache_lock: Arc<Mutex<Cache>>,
         instruction_rx: Receiver<Instruction>,
         data_rx: Receiver<Data>,
@@ -98,12 +101,16 @@ impl Processor {
                         &data_rx,
                     )
                 }
-                Err(RecvError) => break,
+                Err(RecvError) => {
+                    println!("Processor {processor_i} dying.");
+                    break;
+                }
             }
         }
     }
 
     fn controller_thread(
+        processor_i: usize,
         cache_lock: Arc<Mutex<Cache>>,
         controller_rx: Receiver<BusSignal>,
     ) {
@@ -120,7 +127,11 @@ impl Processor {
                             cache = cache_lock.lock().unwrap();
                             controller_handle_signal(signal, &mut cache)
                         }
-                        Err(RecvError) => break,
+                        //Err(RecvError) => break,
+                        Err(RecvError) => {
+                            println!("Controller {processor_i} dying.");
+                            break;
+                        }
                     }
                 }
             }

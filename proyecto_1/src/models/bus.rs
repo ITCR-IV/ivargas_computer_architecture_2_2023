@@ -1,4 +1,4 @@
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, RecvError, SyncSender};
 
 use crate::models::{processor::Processor, Data};
 
@@ -24,5 +24,7 @@ impl Bus {
     }
 
     // This will panick on error but threads should just silently die i think
-    pub fn recv_signal(&self) -> BusSignal { self.bus_input.recv().unwrap() }
+    pub fn recv_signal(&self) -> Result<BusSignal, RecvError> {
+        self.bus_input.recv()
+    }
 }

@@ -4,12 +4,15 @@ use eframe::{
 };
 use std::{
     mem::size_of,
-    sync::mpsc::{Receiver, TryRecvError},
+    sync::mpsc::{Receiver, SyncSender, TryRecvError},
     time::{Duration, Instant},
 };
 
 use crate::{
-    models::{cache::CacheLine, system::SoC, Data, MemOp},
+    models::{
+        cache::CacheLine, instructions::Instruction, system::SocProperties,
+        Data, MemOp,
+    },
     random::UniformRng,
 };
 
@@ -26,7 +29,8 @@ type GuiCache = Vec<CacheLine>;
 type GuiMemory = Vec<Data>;
 
 pub struct AppState {
-    system: SoC,
+    system_props: SocProperties,
+    instruction_txs: Vec<SyncSender<Instruction>>,
     rng: UniformRng,
     nums: Vec<u32>,
     mode: ExecutionMode,
@@ -65,7 +69,8 @@ impl AppState {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         events_rx: Receiver<Event>,
-        system: SoC,
+        instruction_txs: Vec<SyncSender<Instruction>>,
+        system_props: SocProperties,
     ) -> Self {
         let mut style: egui::Style = (*cc.egui_ctx.style()).clone();
         style.spacing.item_spacing = egui::vec2(10.0, 5.0);
@@ -74,7 +79,7 @@ impl AppState {
 
         // For cache drawing
         let mut index_bits = 0;
-        let mut x = system.cache_sets() - 1;
+        let mut x = system_props.cache_sets - 1;
         while x != 0 {
             x >>= 1;
             index_bits += 1;
@@ -88,7 +93,7 @@ impl AppState {
         }
 
         let mut address_bits = 0;
-        let mut x = system.main_memory_size() - 1;
+        let mut x = system_props.main_memory_blocks - 1;
         while x != 0 {
             x >>= 1;
             address_bits += 1;
@@ -96,16 +101,17 @@ impl AppState {
         address_bits += offset_bits;
 
         Self {
-            nums: vec![0; system.num_processors()],
+            nums: vec![0; system_props.num_processors],
             caches: vec![
                 vec![
                     CacheLine::new_cold();
-                    system.cache_associativity() * system.cache_sets()
+                    system_props.cache_associativity
+                        * system_props.cache_sets
                 ];
-                system.num_processors()
+                system_props.num_processors
             ],
-            main_memory: vec![0; system.main_memory_size()],
-            system,
+            main_memory: vec![0; system_props.main_memory_blocks],
+            system_props,
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Automatic,
             speed: 1.0,
@@ -115,13 +121,14 @@ impl AppState {
             offset_bits,
             index_bits,
             address_bits,
+            instruction_txs,
         }
     }
 
     fn update_random_processor(&mut self, num: u32) {
         let i = self
             .rng
-            .gen_range(0u32..self.system.num_processors() as u32)
+            .gen_range(0u32..self.system_props.num_processors as u32)
             as usize;
         self.nums[i] = num;
         self.ctx.animate_bool(self.get_processor_id(i), true);
@@ -299,7 +306,7 @@ impl AppState {
                 default_color * (1.0 - red_portion) + Rgba::RED * red_portion;
             let text_color: Color32 = mixed_color.into();
 
-            let index = line_i / self.system.cache_associativity();
+            let index = line_i / self.system_props.cache_associativity;
             let address = ((cache_line.tag << self.index_bits) | index)
                 << self.offset_bits;
 
@@ -525,7 +532,7 @@ impl eframe::App for AppState {
                     egui::Layout::left_to_right(egui::Align::Min)
                         .with_main_wrap(true),
                     |ui| {
-                        for i in 0..self.system.num_processors() {
+                        for i in 0..self.system_props.num_processors {
                             self.draw_processor(i, ui);
                         }
                     },
