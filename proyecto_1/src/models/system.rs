@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     sync::mpsc::{sync_channel, RecvError, Sender, SyncSender},
     thread,
 };
@@ -6,7 +7,10 @@ use std::{
 use crate::{
     app::Event,
     models::{
-        bus::Bus, cache::Cache, instructions::Instruction, main_memory::Memory,
+        bus::{Bus, BusAction, BusSignal},
+        cache::{Cache, CacheState},
+        instructions::Instruction,
+        main_memory::Memory,
         processor::Processor,
     },
 };
@@ -53,11 +57,59 @@ pub fn init_system(
         .collect()
 }
 
-fn system_control_thread(props: SocProperties, bus: Bus, main_memory: Memory) {
+fn box_err<'a, E: Error + 'a>(
+    res: Result<(), E>,
+) -> Result<(), Box<dyn Error + 'a>> {
+    match res {
+        Ok(()) => Ok(()),
+        Err(err) => Err(Box::new(err)),
+    }
+}
+
+// This is called after the signal has already been propagated
+fn handle_signal(
+    signal: BusSignal,
+    bus: &Bus,
+    main_memory: &mut Memory,
+) -> Result<(), Box<dyn Error>> {
+    box_err(bus.propagate_signal(signal))?;
+
+    match signal.action {
+        BusAction::Invalidate => (),
+        BusAction::ReadMiss => {
+            return box_err(match bus.check_cache_data()? {
+                Some(data) => bus.send_data_to_cpu(
+                    signal.origin,
+                    CacheState::Shared,
+                    data,
+                ),
+                None => bus.send_data_to_cpu(
+                    signal.origin,
+                    CacheState::Exclusive,
+                    main_memory.get_address(signal.address),
+                ),
+            });
+        }
+        BusAction::WriteMem(data) => {
+            main_memory.store_address(signal.address, data)
+        }
+    }
+
+    Ok(())
+}
+
+fn system_control_thread(
+    props: SocProperties,
+    bus: Bus,
+    mut main_memory: Memory,
+) {
     loop {
         match bus.recv_signal() {
             Ok(signal) => {
-                todo!()
+                if let Err(_) = handle_signal(signal, &bus, &mut main_memory) {
+                    println!("Bus dying.");
+                    break;
+                };
             }
             Err(RecvError) => {
                 println!("Bus dying.");

@@ -4,16 +4,16 @@ use crate::models::{cache::CacheState, processor::Processor, Data};
 
 #[derive(Clone, Copy)]
 pub struct BusSignal {
-    origin: usize,
-    address: usize,
-    action: BusAction,
+    pub origin: usize,
+    pub address: usize,
+    pub action: BusAction,
 }
 
 #[derive(Clone, Copy)]
 pub enum BusAction {
     Invalidate,
     ReadMiss,
-    WriteMiss,
+    WriteMem(Data),
 }
 
 pub struct Bus {
@@ -60,5 +60,23 @@ impl Bus {
             }
         }
         Ok(())
+    }
+
+    pub fn check_cache_data(&self) -> Result<Option<Data>, RecvError> {
+        for _ in 0..self.controllers.len() - 1 {
+            if let Some(data) = self.cache_data_input.recv()? {
+                return Ok(Some(data));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn send_data_to_cpu(
+        &self,
+        cpu: usize,
+        status: CacheState,
+        data: Data,
+    ) -> Result<(), SendError<(CacheState, u16)>> {
+        self.data_inputs[cpu].send((status, data))
     }
 }

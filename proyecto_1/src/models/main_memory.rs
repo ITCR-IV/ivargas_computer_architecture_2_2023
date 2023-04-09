@@ -40,6 +40,14 @@ impl Memory {
         self.storage.get(index)
     }
 
+    pub fn get_address(&self, address: usize) -> Data {
+        self.storage[address >> self.offset_bits]
+    }
+
+    pub fn store_address(&mut self, address: usize, data: Data) {
+        self.storage[address >> self.offset_bits] = data;
+    }
+
     pub fn store_line(&mut self, block_index: usize, data: Data) {
         if let Some(ref sender) = self.gui_tx {
             sender
