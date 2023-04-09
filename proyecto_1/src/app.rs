@@ -15,6 +15,8 @@ use crate::{
 };
 
 const PROCESSORS_PER_ROW: usize = 2;
+const PROCESSORS_HEIGHT_PERCENT: f32 = 0.66;
+const MEMORY_HEIGHT_PERCENT: f32 = 1.0 - PROCESSORS_HEIGHT_PERCENT;
 
 #[derive(Debug, PartialEq)]
 enum ExecutionMode {
@@ -349,26 +351,21 @@ impl AppState {
 
         let layout = egui::Layout::top_down(egui::Align::Center);
 
-        let rect = ui
-            .allocate_ui_with_layout((width, height).into(), layout, |ui| {
-                ui.group(|ui| {
-                    ui.heading(format!("CPU{}", i + 1));
+        ui.allocate_ui_with_layout((width, height).into(), layout, |ui| {
+            ui.group(|ui| {
+                ui.heading(format!("CPU{}", i + 1));
 
-                    let red_portion =
-                        self.ctx.animate_bool(self.get_processor_id(i), false);
-                    let default_color: Rgba = ui.visuals().text_color().into();
-                    let mixed_color = default_color * (1.0 - red_portion)
-                        + Rgba::RED * red_portion;
+                let red_portion =
+                    self.ctx.animate_bool(self.get_processor_id(i), false);
+                let default_color: Rgba = ui.visuals().text_color().into();
+                let mixed_color = default_color * (1.0 - red_portion)
+                    + Rgba::RED * red_portion;
 
-                    ui.colored_label(mixed_color, format!("{}", self.nums[i]));
+                ui.colored_label(mixed_color, format!("{}", self.nums[i]));
 
-                    self.draw_cache(i, ui);
-                })
+                self.draw_cache(i, ui);
             })
-            .response
-            .rect;
-
-        println!("CPU Rect: {rect:?}");
+        });
     }
 }
 
@@ -379,13 +376,36 @@ impl eframe::App for AppState {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let layout = egui::Layout::left_to_right(egui::Align::Min)
-                .with_main_wrap(true);
-            ui.with_layout(layout, |ui| {
-                for i in 0..self.system.num_processors() {
-                    self.draw_processor(i, ui);
-                }
-            })
+            egui::ScrollArea::both().show(ui, |ui| {
+                ui.allocate_ui_with_layout(
+                    (
+                        ui.available_width(),
+                        ui.available_height() * PROCESSORS_HEIGHT_PERCENT,
+                    )
+                        .into(),
+                    egui::Layout::left_to_right(egui::Align::Min)
+                        .with_main_wrap(true),
+                    |ui| {
+                        for i in 0..self.system.num_processors() {
+                            self.draw_processor(i, ui);
+                        }
+                    },
+                );
+
+                ui.allocate_ui_with_layout(
+                    (
+                        ui.available_width(),
+                        ui.available_height() * MEMORY_HEIGHT_PERCENT,
+                    )
+                        .into(),
+                    egui::Layout::centered_and_justified(
+                        egui::Direction::BottomUp,
+                    ),
+                    |ui| {
+                        self.draw_processor(0, ui);
+                    },
+                );
+            });
         });
     }
 }
