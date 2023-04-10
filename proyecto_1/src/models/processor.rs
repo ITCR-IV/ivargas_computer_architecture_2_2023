@@ -36,12 +36,27 @@ fn controller_handle_signal(
             cache.invalidate_address(signal.address);
             Ok(())
         }
-        BusAction::ReadMiss => {
-            match cache.get_address(signal.address) {
-                Some(cache_line) => box_err(bus_tx.send(Some(cache_line.data))),
-                None => box_err(bus_tx.send(None)),
+        BusAction::ReadMiss => match cache.get_address(signal.address) {
+            Some(cache_line) => {
+                box_err(bus_tx.send(Some(cache_line.data)))?;
+
+                // update the line's state
+                match cache_line.state {
+                    CacheState::Invalid => unreachable!(),
+                    CacheState::Shared | CacheState::Owned => (),
+                    CacheState::Exclusive => cache.change_state_address(
+                        signal.address,
+                        CacheState::Shared,
+                    ),
+                    CacheState::Modified => cache.change_state_address(
+                        signal.address,
+                        CacheState::Owned,
+                    ),
+                }
+                Ok(())
             }
-        }
+            None => box_err(bus_tx.send(None)),
+        },
         BusAction::WriteMem(_) => Ok(()),
     }
 }

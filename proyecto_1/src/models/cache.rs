@@ -166,7 +166,25 @@ impl Cache {
 
         let index = self.get_index(address);
 
-        // first determine lowest priority state in set
+        // first determine if address is already in set
+        let address_exists: bool = self
+            .get_set(index)
+            .unwrap()
+            .iter()
+            .any(|line| line.tag == self.get_tag(address));
+
+        // replace existing block
+        if address_exists {
+            for i in self.get_set_range(index) {
+                if self.storage[i].tag == self.get_tag(address) {
+                    let replaced_block = self.storage[i].clone();
+                    self.write(i, line);
+                    return replaced_block;
+                }
+            }
+        }
+
+        // else determine lowest priority state in set
         let lowest_priority: CacheState = self
             .get_set(index)
             .unwrap()
@@ -191,12 +209,15 @@ impl Cache {
     }
 
     pub fn invalidate_address(&mut self, address: usize) {
+        self.change_state_address(address, CacheState::Invalid);
+    }
+
+    pub fn change_state_address(&mut self, address: usize, state: CacheState) {
         let index = self.get_index(address);
 
         for i in self.get_set_range(index) {
             if self.storage[i].tag == self.get_tag(address) {
-                let mut cache_line = &mut self.storage[i];
-                cache_line.state = CacheState::Invalid;
+                self.storage[i].state = state;
             }
         }
     }
