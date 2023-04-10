@@ -53,6 +53,7 @@ pub struct Cache {
     gui_tx: Option<Sender<Event>>,
 }
 
+#[allow(dead_code)]
 impl Cache {
     pub fn new_cold(
         processor_id: usize,
