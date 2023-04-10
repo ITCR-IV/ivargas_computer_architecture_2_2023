@@ -2,6 +2,7 @@ use std::{mem::size_of, slice::SliceIndex, sync::mpsc::Sender};
 
 use crate::{app::Event, models::Data};
 
+#[allow(dead_code)]
 pub struct Memory {
     blocks: usize,
     storage: Vec<Data>,
@@ -9,6 +10,7 @@ pub struct Memory {
     offset_bits: usize,
 }
 
+#[allow(dead_code)]
 impl Memory {
     pub fn new(blocks: usize) -> Memory {
         let mut offset_bits = 0;

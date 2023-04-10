@@ -64,7 +64,7 @@ impl Bus {
 
     pub fn check_cache_data(&self) -> Result<Option<Data>, RecvError> {
         for _ in 0..self.controllers.len() - 1 {
-            if let Some(data) = self.cache_data_input.recv()? {
+            if let Some(data) = self.recv_data()? {
                 return Ok(Some(data));
             }
         }

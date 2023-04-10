@@ -172,7 +172,7 @@ impl Cache {
 
         for i in self.get_set_range(index) {
             if self.storage[i].tag == self.get_tag(address) {
-                let mut cache_line = &mut self.storage[i];
+                let cache_line = &mut self.storage[i];
                 return Some(cache_line);
             }
         }

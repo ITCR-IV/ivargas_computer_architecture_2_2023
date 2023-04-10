@@ -50,7 +50,7 @@ pub fn init_system(
         processors.push(processor);
     }
 
-    thread::spawn(move || system_control_thread(props, bus, main_memory));
+    thread::spawn(move || system_control_thread(bus, main_memory));
 
     processors
         .iter()
@@ -90,11 +90,7 @@ fn handle_signal(
     Ok(())
 }
 
-fn system_control_thread(
-    props: SocProperties,
-    bus: Bus,
-    mut main_memory: Memory,
-) {
+fn system_control_thread(bus: Bus, mut main_memory: Memory) {
     loop {
         match bus.recv_signal() {
             Ok(signal) => {
