@@ -1,4 +1,4 @@
-use std::{mem::size_of, slice::SliceIndex, sync::mpsc::Sender};
+use std::{mem::size_of, ops::Range, slice::SliceIndex, sync::mpsc::Sender};
 
 use crate::{app::Event, models::Data};
 
@@ -126,6 +126,16 @@ impl Cache {
         self.get_storage(set_range)
     }
 
+    fn get_set_range(&self, index: usize) -> Range<usize> {
+        index * self.associativity..(index + 1) * self.associativity
+    }
+
+    pub fn get_set_mut(&mut self, index: usize) -> Option<&mut [CacheLine]> {
+        let set_range =
+            index * self.associativity..(index + 1) * self.associativity;
+        self.storage.get_mut(set_range)
+    }
+
     pub fn store_line(&mut self, block_index: usize, line: CacheLine) {
         if let Some(ref sender) = self.gui_tx {
             sender
@@ -137,5 +147,20 @@ impl Cache {
                 .ok();
         }
         self.storage[block_index] = line;
+    }
+
+    pub fn store_address(&mut self, address: usize, line: CacheLine) {
+        self.store_line(address << self.offset_bits, line);
+    }
+
+    pub fn invalidate_address(&mut self, address: usize) {
+        let index = self.get_index(address);
+
+        for i in self.get_set_range(index) {
+            if self.storage[i].tag == self.get_tag(address) {
+                let mut cache_line = &mut self.storage[i];
+                cache_line.state = CacheState::Invalid;
+            }
+        }
     }
 }

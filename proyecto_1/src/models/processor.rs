@@ -30,7 +30,9 @@ fn controller_handle_signal(
     bus_tx: &SyncSender<Option<Data>>,
 ) {
     match signal.action {
-        super::bus::BusAction::Invalidate => todo!(),
+        super::bus::BusAction::Invalidate => {
+            cache.invalidate_address(signal.address)
+        }
         super::bus::BusAction::ReadMiss => todo!(),
         super::bus::BusAction::WriteMem(_) => todo!(),
     }
