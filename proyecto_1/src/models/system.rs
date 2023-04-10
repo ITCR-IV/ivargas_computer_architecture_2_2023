@@ -7,6 +7,7 @@ use std::{
 use crate::{
     app::Event,
     models::{
+        box_err,
         bus::{Bus, BusAction, BusSignal},
         cache::{Cache, CacheState},
         instructions::Instruction,
@@ -55,15 +56,6 @@ pub fn init_system(
         .iter()
         .map(|p| p.cpu_instruction_input())
         .collect()
-}
-
-fn box_err<'a, E: Error + 'a>(
-    res: Result<(), E>,
-) -> Result<(), Box<dyn Error + 'a>> {
-    match res {
-        Ok(()) => Ok(()),
-        Err(err) => Err(Box::new(err)),
-    }
 }
 
 // This is called after the signal has already been propagated

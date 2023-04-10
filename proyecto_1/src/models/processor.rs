@@ -29,6 +29,11 @@ fn controller_handle_signal(
     cache: &mut Cache,
     bus_tx: &SyncSender<Option<Data>>,
 ) {
+    match signal.action {
+        super::bus::BusAction::Invalidate => todo!(),
+        super::bus::BusAction::ReadMiss => todo!(),
+        super::bus::BusAction::WriteMem(_) => todo!(),
+    }
 }
 
 fn cpu_execute_instruction(
@@ -148,7 +153,6 @@ impl Processor {
                                 signal, &mut cache, &bus_tx,
                             )
                         }
-                        //Err(RecvError) => break,
                         Err(RecvError) => {
                             println!("Controller {processor_i} dying.");
                             break;

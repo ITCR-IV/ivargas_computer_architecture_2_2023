@@ -11,3 +11,12 @@ pub enum MemOp {
     Write,
     Read,
 }
+
+fn box_err<'a, E: std::error::Error + 'a>(
+    res: Result<(), E>,
+) -> Result<(), Box<dyn std::error::Error + 'a>> {
+    match res {
+        Ok(()) => Ok(()),
+        Err(err) => Err(Box::new(err)),
+    }
+}
