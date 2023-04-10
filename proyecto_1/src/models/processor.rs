@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     sync::{
         mpsc::{
             sync_channel, Receiver, RecvError, Sender, SyncSender, TryRecvError,
@@ -11,6 +12,7 @@ use std::{
 use crate::{
     app::Event,
     models::{
+        box_err,
         bus::BusSignal,
         cache::{Cache, CacheState},
         instructions::Instruction,
@@ -28,12 +30,18 @@ fn controller_handle_signal(
     signal: BusSignal,
     cache: &mut Cache,
     bus_tx: &SyncSender<Option<Data>>,
-) {
+) -> Result<(), Box<dyn Error>> {
     match signal.action {
         super::bus::BusAction::Invalidate => {
-            cache.invalidate_address(signal.address)
+            cache.invalidate_address(signal.address);
+            Ok(())
         }
-        super::bus::BusAction::ReadMiss => todo!(),
+        super::bus::BusAction::ReadMiss => {
+            match cache.get_address_mut(signal.address) {
+                Some(cache_line) => box_err(bus_tx.send(Some(cache_line.data))),
+                None => box_err(bus_tx.send(None)),
+            }
+        }
         super::bus::BusAction::WriteMem(_) => todo!(),
     }
 }
@@ -143,7 +151,12 @@ impl Processor {
         loop {
             match controller_rx.try_recv() {
                 Ok(signal) => {
-                    controller_handle_signal(signal, &mut cache, &bus_tx)
+                    if let Err(_) =
+                        controller_handle_signal(signal, &mut cache, &bus_tx)
+                    {
+                        println!("Controller {processor_i} dying.");
+                        break;
+                    };
                 } // Handle signal
                 Err(TryRecvError::Disconnected) => break,
                 Err(TryRecvError::Empty) => {
@@ -151,9 +164,12 @@ impl Processor {
                     match controller_rx.recv() {
                         Ok(signal) => {
                             cache = cache_lock.lock().unwrap();
-                            controller_handle_signal(
+                            if let Err(_) = controller_handle_signal(
                                 signal, &mut cache, &bus_tx,
-                            )
+                            ) {
+                                println!("Controller {processor_i} dying.");
+                                break;
+                            };
                         }
                         Err(RecvError) => {
                             println!("Controller {processor_i} dying.");

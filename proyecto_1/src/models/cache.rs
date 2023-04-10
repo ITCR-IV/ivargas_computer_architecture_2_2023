@@ -126,7 +126,7 @@ impl Cache {
         self.get_storage(set_range)
     }
 
-    fn get_set_range(&self, index: usize) -> Range<usize> {
+    pub fn get_set_range(&self, index: usize) -> Range<usize> {
         index * self.associativity..(index + 1) * self.associativity
     }
 
@@ -162,5 +162,21 @@ impl Cache {
                 cache_line.state = CacheState::Invalid;
             }
         }
+    }
+
+    pub fn get_address_mut(
+        &mut self,
+        address: usize,
+    ) -> Option<&mut CacheLine> {
+        let index = self.get_index(address);
+
+        for i in self.get_set_range(index) {
+            if self.storage[i].tag == self.get_tag(address) {
+                let mut cache_line = &mut self.storage[i];
+                return Some(cache_line);
+            }
+        }
+
+        None
     }
 }
