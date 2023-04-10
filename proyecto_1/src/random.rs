@@ -9,7 +9,7 @@ const M: u64 = 2u64.pow(32) - 5;
 const A: u64 = 1588635695;
 const C: u64 = 12345;
 
-pub(crate) struct UniformRng {
+pub struct UniformRng {
     state: u64,
 }
 

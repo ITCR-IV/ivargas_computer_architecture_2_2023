@@ -3,7 +3,7 @@ use eframe::{
     epaint::{Color32, Pos2, Vec2},
 };
 use std::{
-    mem::size_of,
+    mem::{size_of, variant_count},
     sync::mpsc::{Receiver, SyncSender, TryRecvError},
     time::{Duration, Instant},
 };

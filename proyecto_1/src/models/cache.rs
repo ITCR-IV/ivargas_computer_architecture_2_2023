@@ -2,13 +2,14 @@ use std::{mem::size_of, ops::Range, slice::SliceIndex, sync::mpsc::Sender};
 
 use crate::{app::Event, models::Data};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub enum CacheState {
-    Modified,
-    Owned,
-    Exclusive,
-    Shared,
-    Invalid,
+    // Discriminants represent priority to not be replaced
+    Invalid = 0,
+    Shared = 1,
+    Exclusive = 2,
+    Modified = 3,
+    Owned = 4,
 }
 
 impl CacheState {
@@ -137,7 +138,7 @@ impl Cache {
         self.storage.get_mut(set_range)
     }
 
-    pub fn store_line(&mut self, block_index: usize, line: CacheLine) {
+    fn write(&mut self, block_index: usize, line: CacheLine) {
         if let Some(ref sender) = self.gui_tx {
             sender
                 .send(Event::CacheWrite {
@@ -150,8 +151,39 @@ impl Cache {
         self.storage[block_index] = line;
     }
 
-    pub fn store_address(&mut self, address: usize, line: CacheLine) {
-        self.store_line(address << self.offset_bits, line);
+    // Returns line that was replaced
+    pub fn store_line(
+        &mut self,
+        address: usize,
+        state: CacheState,
+        data: Data,
+    ) -> CacheLine {
+        let line = CacheLine {
+            tag: self.get_tag(address),
+            state,
+            data,
+        };
+
+        let index = self.get_index(address);
+
+        // first determine lowest priority state in set
+        let lowest_priority: CacheState = self
+            .get_set(index)
+            .unwrap()
+            .iter()
+            .map(|line| line.state)
+            .min()
+            .unwrap();
+
+        for i in self.get_set_range(index) {
+            if self.storage[i].state == lowest_priority {
+                let replaced_block = self.storage[i].clone();
+                self.write(i, line);
+                return replaced_block;
+            }
+        }
+
+        unreachable!();
     }
 
     pub fn get_address_index(&self, address: usize) -> usize {
@@ -173,7 +205,15 @@ impl Cache {
         let index = self.get_index(address);
 
         for i in self.get_set_range(index) {
-            if self.storage[i].tag == self.get_tag(address) {
+            if self.storage[i].tag == self.get_tag(address)
+                && (match self.storage[i].state {
+                    CacheState::Modified => true,
+                    CacheState::Owned => true,
+                    CacheState::Exclusive => true,
+                    CacheState::Shared => true,
+                    CacheState::Invalid => false,
+                })
+            {
                 return Some(&self.storage[i]);
             }
         }
@@ -188,7 +228,15 @@ impl Cache {
         let index = self.get_index(address);
 
         for i in self.get_set_range(index) {
-            if self.storage[i].tag == self.get_tag(address) {
+            if self.storage[i].tag == self.get_tag(address)
+                && (match self.storage[i].state {
+                    CacheState::Modified => true,
+                    CacheState::Owned => true,
+                    CacheState::Exclusive => true,
+                    CacheState::Shared => true,
+                    CacheState::Invalid => false,
+                })
+            {
                 let cache_line = &mut self.storage[i];
                 return Some(cache_line);
             }

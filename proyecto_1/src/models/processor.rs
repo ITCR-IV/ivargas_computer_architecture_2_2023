@@ -16,7 +16,7 @@ use crate::{
         bus::{BusAction, BusSignal},
         cache::{Cache, CacheState},
         instructions::Instruction,
-        Data,
+        Data, MemOp,
     },
 };
 
@@ -37,7 +37,7 @@ fn controller_handle_signal(
             Ok(())
         }
         super::bus::BusAction::ReadMiss => {
-            match cache.get_address_mut(signal.address) {
+            match cache.get_address(signal.address) {
                 Some(cache_line) => box_err(bus_tx.send(Some(cache_line.data))),
                 None => box_err(bus_tx.send(None)),
             }
@@ -57,8 +57,12 @@ fn cpu_execute_instruction(
     match instruction {
         Instruction::Calc => Ok(()),
         Instruction::Read { address } => match cache.get_address(address) {
-            Some(_) => todo!(),
+            Some(_) => Ok(()),
             None => {
+                gui_tx.send(Event::Alert {
+                    processor_i,
+                    op: MemOp::Read,
+                })?;
                 box_err(bus_tx.send(BusSignal {
                     origin: processor_i,
                     address,
@@ -67,18 +71,12 @@ fn cpu_execute_instruction(
 
                 match data_rx.recv() {
                     Ok((state, data)) => {
-                        let mut line =
-                            cache.get_address(address).unwrap().clone();
-                        line.state = state;
-                        line.data = data;
+                        let replaced_line =
+                            cache.store_line(address, state, data);
 
-                        cache.store_address(address, line.clone());
-                        gui_tx.send(Event::CacheWrite {
-                            cache_i: processor_i,
-                            block_i: cache.get_address_index(address),
-                            line,
-                        })?;
-
+                        if replaced_line.state != CacheState::Invalid {
+                            panic!("Read miss on line that was available");
+                        }
                         Ok(())
                     }
                     Err(err) => Err(Box::new(err)),

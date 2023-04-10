@@ -1,4 +1,5 @@
 #![feature(mutex_unlock)]
+#![feature(variant_count)]
 mod app;
 
 mod models;
