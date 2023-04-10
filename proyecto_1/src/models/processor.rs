@@ -32,17 +32,17 @@ fn controller_handle_signal(
     bus_tx: &SyncSender<Option<Data>>,
 ) -> Result<(), Box<dyn Error>> {
     match signal.action {
-        super::bus::BusAction::Invalidate => {
+        BusAction::Invalidate => {
             cache.invalidate_address(signal.address);
             Ok(())
         }
-        super::bus::BusAction::ReadMiss => {
+        BusAction::ReadMiss => {
             match cache.get_address(signal.address) {
                 Some(cache_line) => box_err(bus_tx.send(Some(cache_line.data))),
                 None => box_err(bus_tx.send(None)),
             }
         }
-        super::bus::BusAction::WriteMem(_) => Ok(()),
+        BusAction::WriteMem(_) => Ok(()),
     }
 }
 

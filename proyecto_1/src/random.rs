@@ -1,10 +1,9 @@
+use std::ops::{Bound, RangeBounds};
+
 // LCG algorithm constants, taken from:
 //      L'Ecuyer, Pierre (1999). "Tables of Linear Congruential Generators of
 //      Different Sizes and Good Lattice Structure". Mathematics of
 //      Computation. doi:10.1090/S0025-5718-99-00996-5
-
-use std::ops::{Bound, RangeBounds};
-
 const M: u64 = 2u64.pow(32) - 5;
 const A: u64 = 1588635695;
 const C: u64 = 12345;
