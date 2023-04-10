@@ -153,6 +153,10 @@ impl Cache {
         self.store_line(address << self.offset_bits, line);
     }
 
+    pub fn get_address_index(&self, address: usize) -> usize {
+        return address >> self.offset_bits;
+    }
+
     pub fn invalidate_address(&mut self, address: usize) {
         let index = self.get_index(address);
 
@@ -162,6 +166,18 @@ impl Cache {
                 cache_line.state = CacheState::Invalid;
             }
         }
+    }
+
+    pub fn get_address(&mut self, address: usize) -> Option<&CacheLine> {
+        let index = self.get_index(address);
+
+        for i in self.get_set_range(index) {
+            if self.storage[i].tag == self.get_tag(address) {
+                return Some(&self.storage[i]);
+            }
+        }
+
+        None
     }
 
     pub fn get_address_mut(

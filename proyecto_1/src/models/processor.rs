@@ -13,7 +13,7 @@ use crate::{
     app::Event,
     models::{
         box_err,
-        bus::BusSignal,
+        bus::{BusAction, BusSignal},
         cache::{Cache, CacheState},
         instructions::Instruction,
         Data,
@@ -51,7 +51,43 @@ fn cpu_execute_instruction(
     cache: &mut Cache,
     bus_tx: &SyncSender<BusSignal>,
     data_rx: &Receiver<(CacheState, Data)>,
-) {
+    gui_tx: &Sender<Event>,
+    processor_i: usize,
+) -> Result<(), Box<dyn Error>> {
+    match instruction {
+        Instruction::Calc => Ok(()),
+        Instruction::Read { address } => match cache.get_address(address) {
+            Some(_) => todo!(),
+            None => {
+                box_err(bus_tx.send(BusSignal {
+                    origin: processor_i,
+                    address,
+                    action: BusAction::ReadMiss,
+                }))?;
+
+                match data_rx.recv() {
+                    Ok((state, data)) => {
+                        let mut line =
+                            cache.get_address(address).unwrap().clone();
+                        line.state = state;
+                        line.data = data;
+
+                        cache.store_address(address, line.clone());
+                        gui_tx.send(Event::CacheWrite {
+                            cache_i: processor_i,
+                            block_i: cache.get_address_index(address),
+                            line,
+                        })?;
+
+                        Ok(())
+                    }
+                    Err(err) => Err(Box::new(err)),
+                }
+            }
+        },
+
+        Instruction::Write { address, data } => todo!(),
+    }
 }
 
 impl Processor {
@@ -125,12 +161,17 @@ impl Processor {
             match instruction_rx.recv() {
                 Ok(instruction) => {
                     let mut cache = cache_lock.lock().unwrap();
-                    cpu_execute_instruction(
+                    if let Err(_) = cpu_execute_instruction(
                         instruction,
                         &mut cache,
                         &bus_tx,
                         &data_rx,
-                    )
+                        &gui_sender,
+                        processor_i,
+                    ) {
+                        println!("Processor {processor_i} dying.");
+                        break;
+                    }
                 }
                 Err(RecvError) => {
                     println!("Processor {processor_i} dying.");
