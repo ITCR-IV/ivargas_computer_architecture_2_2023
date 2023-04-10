@@ -42,7 +42,7 @@ fn controller_handle_signal(
                 None => box_err(bus_tx.send(None)),
             }
         }
-        super::bus::BusAction::WriteMem(_) => todo!(),
+        super::bus::BusAction::WriteMem(_) => Ok(()),
     }
 }
 
