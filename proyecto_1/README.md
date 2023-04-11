@@ -11,3 +11,9 @@ cargo build --release
 ```
 cargo run --release
 ```
+
+# Compilación documentación
+
+```
+pandoc doc/diseño.md --custom-template.tex -o doc/diseño.pdf
+```
