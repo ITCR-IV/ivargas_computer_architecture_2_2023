@@ -25,7 +25,6 @@ pub struct Processor {
 }
 
 fn controller_handle_signal(
-    processor_i: usize,
     signal: BusSignal,
     cache_lock: &Arc<Mutex<Cache>>,
     bus_tx: &SyncSender<Option<Data>>,
@@ -33,10 +32,6 @@ fn controller_handle_signal(
     let mut cache = cache_lock.lock().unwrap();
     match signal.action {
         BusAction::Invalidate => {
-            println!(
-                "({processor_i}) Controller invalidate {0}",
-                signal.address
-            );
             cache.invalidate_address(signal.address);
 
             Ok(())
@@ -44,10 +39,6 @@ fn controller_handle_signal(
         BusAction::ReadMiss => {
             match cache.get_address(signal.address) {
                 Some(cache_line) => {
-                    println!(
-                        "({processor_i}) Controller share {0}",
-                        signal.address
-                    );
                     let data = cache_line.data;
                     let state = cache_line.state;
                     Mutex::unlock(cache);
@@ -88,7 +79,6 @@ fn maybe_write_back(
         // Write back
         // No need to invalidate because for Modified everything else should be invalid and for Owned the others can keep their copies
         CacheState::Modified | CacheState::Owned => {
-            println!("({processor_i}) Asking to write back {address}");
             box_err(bus_tx.send(BusSignal {
                 origin: processor_i,
                 address,
@@ -280,13 +270,8 @@ impl Processor {
         loop {
             match controller_rx.recv() {
                 Ok(signal) => {
-                    if controller_handle_signal(
-                        processor_i,
-                        signal,
-                        &cache_lock,
-                        &bus_tx,
-                    )
-                    .is_err()
+                    if controller_handle_signal(signal, &cache_lock, &bus_tx)
+                        .is_err()
                     {
                         println!("Controller {processor_i} dying.");
                         break;

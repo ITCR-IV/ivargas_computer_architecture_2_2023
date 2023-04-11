@@ -223,12 +223,16 @@ impl AppState {
     fn draw_alerts(&self, i: usize, ui: &mut Ui) {
         let default_color: Rgba = ui.visuals().window_fill().into();
 
-        let read_red_portion = self
-            .ctx
-            .animate_bool(self.get_alert_id(i, MemOp::Read), false);
-        let write_red_portion = self
-            .ctx
-            .animate_bool(self.get_alert_id(i, MemOp::Write), false);
+        let read_red_portion = self.ctx.animate_bool_with_time(
+            self.get_alert_id(i, MemOp::Read),
+            false,
+            3.0,
+        );
+        let write_red_portion = self.ctx.animate_bool_with_time(
+            self.get_alert_id(i, MemOp::Write),
+            false,
+            3.0,
+        );
 
         let read_mixed_color = default_color * (1.0 - read_red_portion)
             + Rgba::RED * read_red_portion;
@@ -238,20 +242,19 @@ impl AppState {
         let read_text_color: Color32 = read_mixed_color.into();
         let write_text_color: Color32 = write_mixed_color.into();
 
-        let address_width =
-            (self.address_bits / 4) + 2 + (self.address_bits % 4 > 0) as usize;
+        let address_width = self.address_bits + 2;
 
         ui.colored_label(
             read_text_color,
             format!(
-                "Read Miss: {:#0address_width$X}",
+                "Read Miss: {:#0address_width$b}",
                 self.read_miss_addresses[i]
             ),
         );
         ui.colored_label(
             write_text_color,
             format!(
-                "Write Miss: {:#0address_width$X}",
+                "Write Miss: {:#0address_width$b}",
                 self.write_miss_addresses[i]
             ),
         );
@@ -260,8 +263,7 @@ impl AppState {
     fn draw_cache(&self, i: usize, ui: &mut Ui) {
         let spacing = self.ctx.style().spacing.item_spacing;
 
-        let address_width =
-            (self.address_bits / 4) + 2 + (self.address_bits % 4 > 0) as usize;
+        let address_width = self.address_bits + 2;
         let data_width = size_of::<Data>() * 2 + 2;
 
         let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
@@ -292,7 +294,7 @@ impl AppState {
         let data_header_width = get_width(DATA_HEADER.to_owned());
         let data_max_width = data_text_width.max(data_header_width);
 
-        let address_text_width = get_width(format!("{:#0address_width$X}", 0));
+        let address_text_width = get_width(format!("{:#0address_width$b}", 0));
         let address_header_width = get_width(ADDRESS_HEADER.to_owned());
         let address_max_width = address_text_width.max(address_header_width);
 
@@ -393,7 +395,7 @@ impl AppState {
             painter.text(
                 Pos2 { x: x_locs[1], y },
                 Align2::LEFT_TOP,
-                format!("{address:#0address_width$X}"),
+                format!("{address:#0address_width$b}"),
                 font_id.clone(),
                 text_color,
             );
@@ -411,8 +413,7 @@ impl AppState {
     fn draw_memory(&mut self, ui: &mut Ui) {
         let spacing = self.ctx.style().spacing.item_spacing;
 
-        let address_width =
-            (self.address_bits / 4) + 2 + (self.address_bits % 4 > 0) as usize;
+        let address_width = self.address_bits + 2;
         let data_width = size_of::<Data>() * 2 + 2;
 
         let font_id = TextStyle::Monospace.resolve(&self.ctx.style());
@@ -439,7 +440,7 @@ impl AppState {
         let data_header_width = get_width(DATA_HEADER.to_owned());
         let data_max_width = data_text_width.max(data_header_width);
 
-        let address_text_width = get_width(format!("{:#0address_width$X}", 0));
+        let address_text_width = get_width(format!("{:#0address_width$b}", 0));
         let address_header_width = get_width(ADDRESS_HEADER.to_owned());
         let address_max_width = address_text_width.max(address_header_width);
 
@@ -513,7 +514,7 @@ impl AppState {
             painter.text(
                 Pos2 { x: x_locs[0], y },
                 Align2::LEFT_TOP,
-                format!("{address:#0address_width$X}"),
+                format!("{address:#0address_width$b}"),
                 font_id.clone(),
                 text_color,
             );
