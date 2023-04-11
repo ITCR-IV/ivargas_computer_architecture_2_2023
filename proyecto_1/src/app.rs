@@ -3,7 +3,7 @@ use eframe::{
     epaint::{Color32, Pos2, Vec2},
 };
 use std::{
-    mem::size_of,
+    mem::{size_of, variant_count},
     sync::mpsc::{Receiver, SyncSender, TryRecvError},
     time::{Duration, Instant},
 };
@@ -32,17 +32,21 @@ pub struct AppState {
     system_props: SocProperties,
     instruction_txs: Vec<SyncSender<Instruction>>,
     rng: UniformRng,
-    nums: Vec<u32>,
     mode: ExecutionMode,
     speed: f32,
     previous_time: Instant,
     ctx: egui::Context,
     events_rx: Receiver<Event>,
 
+    // Last address that was missed per processor
+    read_miss_addresses: Vec<usize>,
+    write_miss_addresses: Vec<usize>,
+
     // These are different from the real system's memories, they're used for
     // the GUI to keep track of the current state of things
     caches: Vec<GuiCache>,
     main_memory: GuiMemory,
+
     offset_bits: usize,
     index_bits: usize,
     address_bits: usize,
@@ -61,6 +65,7 @@ pub enum Event {
     // Assumes a miss
     Alert {
         processor_i: usize,
+        address: usize,
         op: MemOp,
     },
 }
@@ -101,7 +106,6 @@ impl AppState {
         address_bits += offset_bits;
 
         Self {
-            nums: vec![0; system_props.num_processors],
             caches: vec![
                 vec![
                     CacheLine::new_cold();
@@ -111,6 +115,8 @@ impl AppState {
                 system_props.num_processors
             ],
             main_memory: vec![0; system_props.main_memory_blocks],
+            read_miss_addresses: vec![0; system_props.num_processors],
+            write_miss_addresses: vec![0; system_props.num_processors],
             system_props,
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Automatic,
@@ -125,17 +131,40 @@ impl AppState {
         }
     }
 
-    fn update_random_processor(&mut self, num: u32) {
-        let i = self
+    fn gen_random_address(&mut self) -> usize {
+        (self
             .rng
-            .gen_range(0u32..self.system_props.num_processors as u32)
-            as usize;
-        self.nums[i] = num;
-        self.ctx.animate_bool(self.get_processor_id(i), true);
+            .gen_range(0..self.system_props.main_memory_blocks as u32)
+            << self.offset_bits) as usize
     }
 
-    fn get_processor_id(&self, i: usize) -> Id {
-        Id::new(format!("cpu_id_{}", i))
+    fn gen_random_instruction(&mut self) -> Instruction {
+        match (self.rng.gen() >> 16) % variant_count::<Instruction>() as u32 {
+            0 => Instruction::Calc,
+            1 => Instruction::Read {
+                address: self.gen_random_address(),
+            },
+            2 => Instruction::Write {
+                address: self.gen_random_address(),
+                data: self.rng.gen() as u16,
+            },
+            _ => panic!("Unaccounted for instruction"),
+        }
+    }
+
+    fn give_instruction_to_all(&mut self) {
+        println!("---------------------------");
+        for i in 0..self.system_props.num_processors {
+            let instruction = self.gen_random_instruction();
+            println!("Sending instruction {instruction:?} to processor {i}");
+            let processor_tx = &self.instruction_txs[i];
+            match processor_tx.send(instruction) {
+                Ok(_) => (),
+                Err(_) => {
+                    panic!("One of the system threads died unexpectedly")
+                }
+            }
+        }
     }
 
     fn get_cache_line_id(&self, cache_i: usize, line_i: usize) -> Id {
@@ -144,6 +173,10 @@ impl AppState {
 
     fn get_mem_line_id(&self, line_i: usize) -> Id {
         Id::new(format!("main_memory_line_id__{line_i}"))
+    }
+
+    fn get_alert_id(&self, processor_id: usize, op: MemOp) -> Id {
+        Id::new(format!("miss_alert_{processor_id}_{op:?}"))
     }
 }
 
@@ -167,8 +200,7 @@ impl AppState {
         match self.mode {
             ExecutionMode::Manual => {
                 if ui.button("Step").clicked() {
-                    let num = self.rng.gen_range(0..=10);
-                    self.update_random_processor(num);
+                    self.give_instruction_to_all();
                 }
             }
             ExecutionMode::Automatic => {
@@ -180,13 +212,49 @@ impl AppState {
                 if time_passed
                     > Duration::from_millis((self.speed * 1000.0) as u64)
                 {
-                    let num = self.rng.gen_range(0..=10);
-                    self.update_random_processor(num);
+                    self.give_instruction_to_all();
                     self.previous_time = Instant::now();
                 }
                 self.ctx.request_repaint();
             }
         }
+    }
+
+    fn draw_alerts(&self, i: usize, ui: &mut Ui) {
+        let default_color: Rgba = ui.visuals().window_fill().into();
+
+        let read_red_portion = self
+            .ctx
+            .animate_bool(self.get_alert_id(i, MemOp::Read), false);
+        let write_red_portion = self
+            .ctx
+            .animate_bool(self.get_alert_id(i, MemOp::Write), false);
+
+        let read_mixed_color = default_color * (1.0 - read_red_portion)
+            + Rgba::RED * read_red_portion;
+        let write_mixed_color = default_color * (1.0 - write_red_portion)
+            + Rgba::RED * write_red_portion;
+
+        let read_text_color: Color32 = read_mixed_color.into();
+        let write_text_color: Color32 = write_mixed_color.into();
+
+        let address_width =
+            (self.address_bits / 4) + 2 + (self.address_bits % 4 > 0) as usize;
+
+        ui.colored_label(
+            read_text_color,
+            format!(
+                "Read Miss: {:#0address_width$X}",
+                self.read_miss_addresses[i]
+            ),
+        );
+        ui.colored_label(
+            write_text_color,
+            format!(
+                "Write Miss: {:#0address_width$X}",
+                self.write_miss_addresses[i]
+            ),
+        );
     }
 
     fn draw_cache(&self, i: usize, ui: &mut Ui) {
@@ -473,13 +541,7 @@ impl AppState {
             ui.group(|ui| {
                 ui.heading(format!("CPU{}", i + 1));
 
-                let red_portion =
-                    self.ctx.animate_bool(self.get_processor_id(i), false);
-                let default_color: Rgba = ui.visuals().text_color().into();
-                let mixed_color = default_color * (1.0 - red_portion)
-                    + Rgba::RED * red_portion;
-
-                ui.colored_label(mixed_color, format!("{}", self.nums[i]));
+                self.draw_alerts(i, ui);
 
                 self.draw_cache(i, ui);
             })
@@ -507,9 +569,21 @@ impl eframe::App for AppState {
                     self.ctx.animate_bool(self.get_mem_line_id(block_i), true);
                 }
                 Event::Alert {
-                    processor_i: _,
-                    op: _,
-                } => todo!(),
+                    address,
+                    processor_i,
+                    op,
+                } => {
+                    match op {
+                        MemOp::Write => {
+                            self.write_miss_addresses[processor_i] = address
+                        }
+                        MemOp::Read => {
+                            self.read_miss_addresses[processor_i] = address
+                        }
+                    }
+                    self.ctx
+                        .animate_bool(self.get_alert_id(processor_i, op), true);
+                }
             },
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => {

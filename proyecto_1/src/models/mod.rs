@@ -7,6 +7,7 @@ pub mod system;
 
 pub type Data = u16;
 
+#[derive(Debug)]
 pub enum MemOp {
     Write,
     Read,

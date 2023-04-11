@@ -1,9 +1,7 @@
 use std::{
     error::Error,
     sync::{
-        mpsc::{
-            sync_channel, Receiver, RecvError, Sender, SyncSender, TryRecvError,
-        },
+        mpsc::{sync_channel, Receiver, RecvError, Sender, SyncSender},
         Arc, Mutex,
     },
     thread,
@@ -27,33 +25,71 @@ pub struct Processor {
 }
 
 fn controller_handle_signal(
+    processor_i: usize,
     signal: BusSignal,
-    cache: &mut Cache,
+    cache_lock: &Arc<Mutex<Cache>>,
     bus_tx: &SyncSender<Option<Data>>,
 ) -> Result<(), Box<dyn Error>> {
+    let mut cache = cache_lock.lock().unwrap();
     match signal.action {
         BusAction::Invalidate => {
+            println!(
+                "({processor_i}) Controller invalidate {0}",
+                signal.address
+            );
+            //let invalidated_line = cache.get_address(signal.address).cloned();
             cache.invalidate_address(signal.address);
+
+            //match invalidated_line {
+            //    Some(CacheLine {
+            //        state:
+            //            CacheState::Invalid
+            //            | CacheState::Shared
+            //            | CacheState::Exclusive,
+            //        ..
+            //    })
+            //    | None => box_err(bus_tx.send(None))?,
+            //    Some(CacheLine {
+            //        state: CacheState::Modified | CacheState::Owned,
+            //        data,
+            //        ..
+            //    }) => box_err(bus_tx.send(Some(data)))?,
+            //}
+
             Ok(())
         }
-        BusAction::ReadMiss => match cache.get_address(signal.address) {
-            Some(cache_line) => {
-                box_err(bus_tx.send(Some(cache_line.data)))?;
+        BusAction::ReadMiss => {
+            match cache.get_address(signal.address) {
+                Some(cache_line) => {
+                    println!(
+                        "({processor_i}) Controller share {0}",
+                        signal.address
+                    );
+                    let data = cache_line.data;
+                    let state = cache_line.state;
+                    Mutex::unlock(cache);
+                    box_err(bus_tx.send(Some(data)))?;
 
-                // update the line's state
-                match cache_line.state {
-                    CacheState::Invalid => unreachable!(),
-                    CacheState::Shared | CacheState::Owned => (),
-                    CacheState::Exclusive | CacheState::Modified => cache
-                        .change_state_address(
-                            signal.address,
-                            CacheState::Owned,
-                        ),
+                    // update the line's state
+                    match state {
+                        CacheState::Invalid => unreachable!(),
+                        CacheState::Shared | CacheState::Owned => (),
+                        CacheState::Exclusive | CacheState::Modified => {
+                            let mut cache = cache_lock.lock().unwrap();
+                            cache.change_state_address(
+                                signal.address,
+                                CacheState::Owned,
+                            )
+                        }
+                    }
+                    Ok(())
                 }
-                Ok(())
+                None => {
+                    box_err(bus_tx.send(None))?;
+                    Ok(())
+                }
             }
-            None => box_err(bus_tx.send(None)),
-        },
+        }
         BusAction::WriteMem(_) => Ok(()),
     }
 }
@@ -69,6 +105,7 @@ fn maybe_write_back(
         // Write back
         // No need to invalidate because for Modified everything else should be invalid and for Owned the others can keep their copies
         CacheState::Modified | CacheState::Owned => {
+            println!("({processor_i}) Asking to write back {address}");
             box_err(bus_tx.send(BusSignal {
                 origin: processor_i,
                 address,
@@ -82,21 +119,25 @@ fn maybe_write_back(
 
 fn cpu_execute_instruction(
     instruction: Instruction,
-    cache: &mut Cache,
+    cache_lock: &Arc<Mutex<Cache>>,
     bus_tx: &SyncSender<BusSignal>,
     data_rx: &Receiver<(CacheState, Data)>,
     gui_tx: &Sender<Event>,
     processor_i: usize,
 ) -> Result<(), Box<dyn Error>> {
+    let mut cache = cache_lock.lock().unwrap();
     match instruction {
         Instruction::Calc => Ok(()),
         Instruction::Read { address } => match cache.get_address(address) {
             Some(_) => Ok(()),
             None => {
                 gui_tx.send(Event::Alert {
+                    address,
                     processor_i,
                     op: MemOp::Read,
                 })?;
+                Mutex::unlock(cache);
+
                 box_err(bus_tx.send(BusSignal {
                     origin: processor_i,
                     address,
@@ -105,9 +146,11 @@ fn cpu_execute_instruction(
 
                 match data_rx.recv() {
                     Ok((state, data)) => {
+                        let mut cache = cache_lock.lock().unwrap();
                         let replaced_line =
                             cache.store_line(address, state, data);
 
+                        Mutex::unlock(cache);
                         maybe_write_back(
                             address,
                             replaced_line,
@@ -130,6 +173,7 @@ fn cpu_execute_instruction(
                 || (replaced_line.state == CacheState::Invalid)
             {
                 gui_tx.send(Event::Alert {
+                    address,
                     processor_i,
                     op: MemOp::Write,
                 })?;
@@ -137,11 +181,14 @@ fn cpu_execute_instruction(
 
             // invalidate other caches
             if replaced_line.state != CacheState::Modified {
+                Mutex::unlock(cache);
                 box_err(bus_tx.send(BusSignal {
                     origin: processor_i,
                     address,
                     action: BusAction::Invalidate,
                 }))?
+            } else {
+                Mutex::unlock(cache);
             }
 
             maybe_write_back(address, replaced_line, bus_tx, processor_i)
@@ -219,10 +266,9 @@ impl Processor {
         loop {
             match instruction_rx.recv() {
                 Ok(instruction) => {
-                    let mut cache = cache_lock.lock().unwrap();
                     if let Err(_) = cpu_execute_instruction(
                         instruction,
-                        &mut cache,
+                        &cache_lock,
                         &bus_tx,
                         &data_rx,
                         &gui_sender,
@@ -246,36 +292,22 @@ impl Processor {
         controller_rx: Receiver<BusSignal>,
         bus_tx: SyncSender<Option<Data>>,
     ) {
-        let mut cache = cache_lock.lock().unwrap();
-
         loop {
-            match controller_rx.try_recv() {
+            match controller_rx.recv() {
                 Ok(signal) => {
-                    if let Err(_) =
-                        controller_handle_signal(signal, &mut cache, &bus_tx)
-                    {
+                    if let Err(_) = controller_handle_signal(
+                        processor_i,
+                        signal,
+                        &cache_lock,
+                        &bus_tx,
+                    ) {
                         println!("Controller {processor_i} dying.");
                         break;
                     };
-                } // Handle signal
-                Err(TryRecvError::Disconnected) => break,
-                Err(TryRecvError::Empty) => {
-                    Mutex::unlock(cache);
-                    match controller_rx.recv() {
-                        Ok(signal) => {
-                            cache = cache_lock.lock().unwrap();
-                            if let Err(_) = controller_handle_signal(
-                                signal, &mut cache, &bus_tx,
-                            ) {
-                                println!("Controller {processor_i} dying.");
-                                break;
-                            };
-                        }
-                        Err(RecvError) => {
-                            println!("Controller {processor_i} dying.");
-                            break;
-                        }
-                    }
+                }
+                Err(RecvError) => {
+                    println!("Controller {processor_i} dying.");
+                    break;
                 }
             }
         }

@@ -64,11 +64,17 @@ fn handle_signal(
     bus: &Bus,
     main_memory: &mut Memory,
 ) -> Result<(), Box<dyn Error>> {
-    box_err(bus.propagate_signal(signal))?;
-
     match signal.action {
-        BusAction::Invalidate => (),
+        BusAction::Invalidate => {
+            box_err(bus.propagate_signal(signal))?;
+            //for i in 0..bus.controllers.len() - 1 {
+            //    if let Some(data) = bus.recv_data()? {
+            //        result = Some(data);
+            //    }
+            //}
+        }
         BusAction::ReadMiss => {
+            box_err(bus.request_cache_data(signal))?;
             return box_err(match bus.check_cache_data()? {
                 Some(data) => bus.send_data_to_cpu(
                     signal.origin,
@@ -83,6 +89,7 @@ fn handle_signal(
             });
         }
         BusAction::WriteMem(data) => {
+            println!("BUS: Write back to main memory {0}", signal.address);
             main_memory.store_address(signal.address, data)
         }
     }

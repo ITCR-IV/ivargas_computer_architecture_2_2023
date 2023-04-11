@@ -218,11 +218,20 @@ impl Cache {
         for i in self.get_set_range(index) {
             if self.storage[i].tag == self.get_tag(address) {
                 self.storage[i].state = state;
+                if let Some(ref sender) = self.gui_tx {
+                    sender
+                        .send(Event::CacheWrite {
+                            cache_i: self.processor_id,
+                            block_i: i,
+                            line: self.storage[i].clone(),
+                        })
+                        .ok();
+                }
             }
         }
     }
 
-    pub fn get_address(&mut self, address: usize) -> Option<&CacheLine> {
+    pub fn get_address(&self, address: usize) -> Option<&CacheLine> {
         let index = self.get_index(address);
 
         for i in self.get_set_range(index) {

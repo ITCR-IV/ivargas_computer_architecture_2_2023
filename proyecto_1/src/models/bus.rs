@@ -2,14 +2,14 @@ use std::sync::mpsc::{Receiver, RecvError, SendError, SyncSender};
 
 use crate::models::{cache::CacheState, processor::Processor, Data};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct BusSignal {
     pub origin: usize,
     pub address: usize,
     pub action: BusAction,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum BusAction {
     Invalidate,
     ReadMiss,
@@ -57,6 +57,18 @@ impl Bus {
         for (i, sender) in self.controllers.iter().enumerate() {
             if i != signal.origin {
                 sender.send(signal)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn request_cache_data(
+        &self,
+        read_miss_signal: BusSignal,
+    ) -> Result<(), SendError<BusSignal>> {
+        for i in 0..self.controllers.len() {
+            if i != read_miss_signal.origin {
+                self.controllers[i].send(read_miss_signal)?;
             }
         }
         Ok(())
