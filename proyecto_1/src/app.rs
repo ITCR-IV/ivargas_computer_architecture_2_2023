@@ -1,8 +1,9 @@
 use eframe::{
-    egui::{self, Align2, Id, Rgba, Sense, TextStyle, Ui},
+    egui::{self, Align, Align2, Id, Layout, Rgba, Sense, TextStyle, Ui},
     epaint::{Color32, Pos2, Vec2},
 };
 use std::{
+    collections::VecDeque,
     mem::{size_of, variant_count},
     sync::mpsc::{Receiver, SyncSender, TryRecvError},
     time::{Duration, Instant},
@@ -18,6 +19,8 @@ use crate::{
 
 const PROCESSORS_PER_ROW: usize = 2;
 const PROCESSORS_HEIGHT_PERCENT: f32 = 0.66;
+
+const INSTRUCTIONS_HIST: usize = 8;
 
 #[derive(Debug, PartialEq)]
 enum ExecutionMode {
@@ -41,6 +44,10 @@ pub struct AppState {
     // Last address that was missed per processor
     read_miss_addresses: Vec<usize>,
     write_miss_addresses: Vec<usize>,
+
+    // Last instruction for each processor
+    last_instructions: Vec<Instruction>,
+    instructions_hist: VecDeque<(usize, Instruction)>,
 
     // These are different from the real system's memories, they're used for
     // the GUI to keep track of the current state of things
@@ -117,6 +124,12 @@ impl AppState {
             main_memory: vec![0; system_props.main_memory_blocks],
             read_miss_addresses: vec![0; system_props.num_processors],
             write_miss_addresses: vec![0; system_props.num_processors],
+            last_instructions: vec![
+                Instruction::Calc;
+                system_props.num_processors
+            ],
+            instructions_hist: vec![(0, Instruction::Calc); INSTRUCTIONS_HIST]
+                .into(),
             system_props,
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Automatic,
@@ -152,10 +165,19 @@ impl AppState {
         }
     }
 
+    fn save_instruction(&mut self, cpu_i: usize, instruction: Instruction) {
+        self.last_instructions[cpu_i] = instruction.clone();
+        self.instructions_hist.push_back((cpu_i, instruction));
+        while self.instructions_hist.len() > INSTRUCTIONS_HIST {
+            self.instructions_hist.pop_front();
+        }
+    }
+
     fn give_instruction_to_all(&mut self) {
         println!("---------------------------");
         for i in 0..self.system_props.num_processors {
             let instruction = self.gen_random_instruction();
+            self.save_instruction(i, instruction.clone());
             println!("Sending instruction {instruction:?} to processor {i}");
             let processor_tx = &self.instruction_txs[i];
             match processor_tx.send(instruction) {
@@ -205,7 +227,7 @@ impl AppState {
             }
             ExecutionMode::Automatic => {
                 ui.add(
-                    egui::Slider::new(&mut self.speed, 0.5..=10.0)
+                    egui::Slider::new(&mut self.speed, 1.0..=10.0)
                         .text("seconds"),
                 );
                 let time_passed = Instant::now() - self.previous_time;
@@ -218,6 +240,18 @@ impl AppState {
                 self.ctx.request_repaint();
             }
         }
+
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.heading("Instructions History");
+            for (cpu, instruction) in &self.instructions_hist {
+                ui.label(format!("CPU{}: {}", cpu + 1, instruction));
+            }
+        });
+
+        let spacing = self.ctx.style().spacing.item_spacing;
+        ui.add_space(spacing.y * 2.0);
+        ui.label("(Most recent at the top)");
     }
 
     fn draw_alerts(&self, i: usize, ui: &mut Ui) {
@@ -536,7 +570,7 @@ impl AppState {
             / PROCESSORS_PER_ROW as f32;
         let height = ui.available_height();
 
-        let layout = egui::Layout::top_down(egui::Align::Center);
+        let layout = Layout::top_down(Align::Center).with_cross_justify(false);
 
         ui.allocate_ui_with_layout((width, height).into(), layout, |ui| {
             ui.group(|ui| {
@@ -545,6 +579,11 @@ impl AppState {
                 self.draw_alerts(i, ui);
 
                 self.draw_cache(i, ui);
+
+                ui.add_space(spacing.y * 2.0);
+                let label = ui.heading("Last Instruction: ");
+                ui.label(format!("{}", self.last_instructions[i]))
+                    .labelled_by(label.id);
             })
         });
     }
@@ -604,8 +643,7 @@ impl eframe::App for AppState {
                         ui.available_height() * PROCESSORS_HEIGHT_PERCENT,
                     )
                         .into(),
-                    egui::Layout::left_to_right(egui::Align::Min)
-                        .with_main_wrap(true),
+                    Layout::left_to_right(Align::Min).with_main_wrap(true),
                     |ui| {
                         for i in 0..self.system_props.num_processors {
                             self.draw_processor(i, ui);
@@ -615,7 +653,7 @@ impl eframe::App for AppState {
 
                 ui.allocate_ui_with_layout(
                     (ui.available_width(), ui.available_height()).into(),
-                    egui::Layout::top_down(egui::Align::Center),
+                    Layout::top_down(Align::Center),
                     |ui| {
                         ui.group(|ui| {
                             ui.heading("Mem");
