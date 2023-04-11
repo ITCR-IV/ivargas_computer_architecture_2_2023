@@ -41,6 +41,10 @@ pub struct AppState {
     ctx: egui::Context,
     events_rx: Receiver<Event>,
 
+    // Manual instruction crafting
+    manual_instruction: (usize, Instruction),
+    manual_instruction_data: String,
+
     // Last address that was missed per processor
     read_miss_addresses: Vec<usize>,
     write_miss_addresses: Vec<usize>,
@@ -130,6 +134,8 @@ impl AppState {
             ],
             instructions_hist: vec![(0, Instruction::Calc); INSTRUCTIONS_HIST]
                 .into(),
+            manual_instruction: (0, Instruction::Calc),
+            manual_instruction_data: "0".to_owned(),
             system_props,
             rng: UniformRng::from_seed(0),
             mode: ExecutionMode::Automatic,
@@ -170,6 +176,23 @@ impl AppState {
         self.instructions_hist.push_back((cpu_i, instruction));
         while self.instructions_hist.len() > INSTRUCTIONS_HIST {
             self.instructions_hist.pop_front();
+        }
+    }
+
+    fn send_specific_instruction(
+        &mut self,
+        cpu_i: usize,
+        instruction: Instruction,
+    ) {
+        println!("---------------------------");
+        self.save_instruction(cpu_i, instruction.clone());
+        println!("Sending instruction {instruction:?} to processor {cpu_i}");
+        let processor_tx = &self.instruction_txs[cpu_i];
+        match processor_tx.send(instruction) {
+            Ok(_) => (),
+            Err(_) => {
+                panic!("One of the system threads died unexpectedly")
+            }
         }
     }
 
@@ -218,11 +241,126 @@ impl AppState {
 
         ui.separator();
 
+        let spacing = self.ctx.style().spacing.item_spacing;
+
         ui.heading("Controls");
         match self.mode {
             ExecutionMode::Manual => {
-                if ui.button("Step").clicked() {
+                if ui.button("Step All").clicked() {
                     self.give_instruction_to_all();
+                }
+                ui.add_space(spacing.y * 2.0);
+                ui.label("Execute single instruction:");
+
+                egui::ComboBox::from_label("CPU")
+                    .selected_text(format!("{}", self.manual_instruction.0 + 1))
+                    .show_ui(ui, |ui| {
+                        for i in 0..self.system_props.num_processors {
+                            ui.selectable_value(
+                                &mut self.manual_instruction.0,
+                                i,
+                                format!("{}", i + 1),
+                            );
+                        }
+                    });
+
+                let (address, data) = match self.manual_instruction.1 {
+                    Instruction::Calc => (0, 0),
+                    Instruction::Read { address } => (address, 0),
+                    Instruction::Write { address, data } => (address, data),
+                };
+
+                egui::ComboBox::from_label("Instruction Type")
+                    .selected_text(format!(
+                        "{}",
+                        self.manual_instruction.1.get_type_str()
+                    ))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.manual_instruction.1,
+                            Instruction::Calc,
+                            Instruction::Calc.get_type_str(),
+                        );
+
+                        ui.selectable_value(
+                            &mut self.manual_instruction.1,
+                            Instruction::Read { address },
+                            Instruction::Read { address }.get_type_str(),
+                        );
+
+                        ui.selectable_value(
+                            &mut self.manual_instruction.1,
+                            Instruction::Write { address, data },
+                            Instruction::Write { address, data }.get_type_str(),
+                        );
+                    });
+
+                let address_width = self.address_bits + 2;
+                match &mut self.manual_instruction.1 {
+                    Instruction::Calc => (),
+                    Instruction::Read {
+                        ref mut address, ..
+                    }
+                    | Instruction::Write {
+                        ref mut address, ..
+                    } => {
+                        egui::ComboBox::from_label("Address")
+                            .selected_text(format!(
+                                "{:#0address_width$b}",
+                                address
+                            ))
+                            .show_ui(ui, |ui| {
+                                for i in 0..self.system_props.main_memory_blocks
+                                {
+                                    ui.selectable_value(
+                                        address,
+                                        i << self.offset_bits,
+                                        format!(
+                                            "{:#0address_width$b}",
+                                            i << self.offset_bits
+                                        ),
+                                    );
+                                }
+                            });
+                    }
+                }
+
+                let mut enable_button = true;
+                match &mut self.manual_instruction.1 {
+                    Instruction::Calc | Instruction::Read { .. } => (),
+                    Instruction::Write { ref mut data, .. } => {
+                        ui.horizontal(|ui| {
+                            let data_label = ui.label("Data: ");
+                            ui.text_edit_singleline(
+                                &mut self.manual_instruction_data,
+                            )
+                            .labelled_by(data_label.id);
+                        });
+
+                        match self.manual_instruction_data.parse::<Data>() {
+                            Ok(parsed_data) => *data = parsed_data,
+                            Err(err) => {
+                                enable_button = false;
+                                ui.colored_label(
+                                    Color32::RED,
+                                    format!("Invalid value for data: {err}"),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if ui
+                    .add_enabled(
+                        enable_button,
+                        egui::Button::new("Execute Instruction"),
+                    )
+                    .clicked()
+                {
+                    self.send_specific_instruction(
+                        self.manual_instruction.0,
+                        self.manual_instruction.1.clone(),
+                    );
                 }
             }
             ExecutionMode::Automatic => {
@@ -249,9 +387,8 @@ impl AppState {
             }
         });
 
-        let spacing = self.ctx.style().spacing.item_spacing;
-        ui.add_space(spacing.y * 2.0);
-        ui.label("(Most recent at the top)");
+        ui.add_space(spacing.y);
+        ui.label("(Most recent at the bottom)");
     }
 
     fn draw_alerts(&self, i: usize, ui: &mut Ui) {

@@ -2,11 +2,21 @@ use std::fmt;
 
 use crate::models::Data;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Calc,
     Read { address: usize },
     Write { address: usize, data: Data },
+}
+
+impl Instruction {
+    pub fn get_type_str(&self) -> &str {
+        match self {
+            Instruction::Calc => "Calc",
+            Instruction::Read { .. } => "Read",
+            Instruction::Write { .. } => "Write",
+        }
+    }
 }
 
 impl fmt::Display for Instruction {
