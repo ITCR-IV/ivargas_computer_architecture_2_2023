@@ -97,7 +97,7 @@ fn system_control_thread(bus: Bus, mut main_memory: Memory) {
     loop {
         match bus.recv_signal() {
             Ok(signal) => {
-                if let Err(_) = handle_signal(signal, &bus, &mut main_memory) {
+                if  handle_signal(signal, &bus, &mut main_memory).is_err() {
                     println!("Bus dying.");
                     break;
                 };

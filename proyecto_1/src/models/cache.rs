@@ -13,7 +13,7 @@ pub enum CacheState {
 }
 
 impl CacheState {
-    pub fn to_letter(&self) -> &str {
+    pub fn get_letter(&self) -> &str {
         match self {
             CacheState::Modified => "M",
             CacheState::Owned => "O",
@@ -205,7 +205,7 @@ impl Cache {
     }
 
     pub fn get_address_index(&self, address: usize) -> usize {
-        return address >> self.offset_bits;
+        address >> self.offset_bits
     }
 
     pub fn invalidate_address(&mut self, address: usize) {

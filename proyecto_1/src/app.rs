@@ -385,7 +385,7 @@ impl AppState {
             painter.text(
                 Pos2 { x: x_locs[0], y },
                 Align2::LEFT_TOP,
-                cache_line.state.to_letter(),
+                cache_line.state.get_letter(),
                 font_id.clone(),
                 text_color,
             );
@@ -393,7 +393,7 @@ impl AppState {
             painter.text(
                 Pos2 { x: x_locs[1], y },
                 Align2::LEFT_TOP,
-                format!("{:#0address_width$X}", address),
+                format!("{address:#0address_width$X}"),
                 font_id.clone(),
                 text_color,
             );
@@ -513,7 +513,7 @@ impl AppState {
             painter.text(
                 Pos2 { x: x_locs[0], y },
                 Align2::LEFT_TOP,
-                format!("{:#0address_width$X}", address),
+                format!("{address:#0address_width$X}"),
                 font_id.clone(),
                 text_color,
             );
@@ -521,7 +521,7 @@ impl AppState {
             painter.text(
                 Pos2 { x: x_locs[1], y },
                 Align2::LEFT_TOP,
-                format!("{:#0data_width$X}", data),
+                format!("{data:#0data_width$X}"),
                 font_id.clone(),
                 text_color,
             );

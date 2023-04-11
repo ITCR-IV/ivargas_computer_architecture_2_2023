@@ -208,7 +208,7 @@ impl Processor {
         }
 
         {
-            let cache_lock = local_cache.clone();
+            let cache_lock = local_cache;
             thread::spawn(move || {
                 Self::controller_thread(
                     processor_i,
@@ -249,14 +249,16 @@ impl Processor {
         loop {
             match instruction_rx.recv() {
                 Ok(instruction) => {
-                    if let Err(_) = cpu_execute_instruction(
+                    if cpu_execute_instruction(
                         instruction,
                         &cache_lock,
                         &bus_tx,
                         &data_rx,
                         &gui_sender,
                         processor_i,
-                    ) {
+                    )
+                    .is_err()
+                    {
                         println!("Processor {processor_i} dying.");
                         break;
                     }
@@ -278,12 +280,14 @@ impl Processor {
         loop {
             match controller_rx.recv() {
                 Ok(signal) => {
-                    if let Err(_) = controller_handle_signal(
+                    if controller_handle_signal(
                         processor_i,
                         signal,
                         &cache_lock,
                         &bus_tx,
-                    ) {
+                    )
+                    .is_err()
+                    {
                         println!("Controller {processor_i} dying.");
                         break;
                     };
