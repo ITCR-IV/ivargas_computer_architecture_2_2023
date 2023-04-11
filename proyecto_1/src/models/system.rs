@@ -2,6 +2,7 @@ use std::{
     error::Error,
     sync::mpsc::{sync_channel, RecvError, Sender, SyncSender},
     thread,
+    time::Duration,
 };
 
 use crate::{
@@ -64,6 +65,8 @@ fn handle_signal(
     bus: &Bus,
     main_memory: &mut Memory,
 ) -> Result<(), Box<dyn Error>> {
+    // Simulated bus delay
+    thread::sleep(Duration::from_millis(400));
     match signal.action {
         BusAction::Invalidate => {
             box_err(bus.propagate_signal(signal))?;
@@ -97,7 +100,7 @@ fn system_control_thread(bus: Bus, mut main_memory: Memory) {
     loop {
         match bus.recv_signal() {
             Ok(signal) => {
-                if  handle_signal(signal, &bus, &mut main_memory).is_err() {
+                if handle_signal(signal, &bus, &mut main_memory).is_err() {
                     println!("Bus dying.");
                     break;
                 };

@@ -205,7 +205,7 @@ impl AppState {
             }
             ExecutionMode::Automatic => {
                 ui.add(
-                    egui::Slider::new(&mut self.speed, 0.1..=10.0)
+                    egui::Slider::new(&mut self.speed, 0.5..=10.0)
                         .text("seconds"),
                 );
                 let time_passed = Instant::now() - self.previous_time;
