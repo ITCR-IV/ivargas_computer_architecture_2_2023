@@ -67,12 +67,8 @@ fn handle_signal(
     match signal.action {
         BusAction::Invalidate => {
             box_err(bus.propagate_signal(signal))?;
-            //for i in 0..bus.controllers.len() - 1 {
-            //    if let Some(data) = bus.recv_data()? {
-            //        result = Some(data);
-            //    }
-            //}
         }
+
         BusAction::ReadMiss => {
             box_err(bus.request_cache_data(signal))?;
             return box_err(match bus.check_cache_data()? {

@@ -37,24 +37,7 @@ fn controller_handle_signal(
                 "({processor_i}) Controller invalidate {0}",
                 signal.address
             );
-            //let invalidated_line = cache.get_address(signal.address).cloned();
             cache.invalidate_address(signal.address);
-
-            //match invalidated_line {
-            //    Some(CacheLine {
-            //        state:
-            //            CacheState::Invalid
-            //            | CacheState::Shared
-            //            | CacheState::Exclusive,
-            //        ..
-            //    })
-            //    | None => box_err(bus_tx.send(None))?,
-            //    Some(CacheLine {
-            //        state: CacheState::Modified | CacheState::Owned,
-            //        data,
-            //        ..
-            //    }) => box_err(bus_tx.send(Some(data)))?,
-            //}
 
             Ok(())
         }
