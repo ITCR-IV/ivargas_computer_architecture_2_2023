@@ -14,7 +14,7 @@ use crate::{
     models::{
         box_err,
         bus::{BusAction, BusSignal},
-        cache::{Cache, CacheState},
+        cache::{Cache, CacheLine, CacheState},
         instructions::Instruction,
         Data, MemOp,
     },
@@ -44,14 +44,11 @@ fn controller_handle_signal(
                 match cache_line.state {
                     CacheState::Invalid => unreachable!(),
                     CacheState::Shared | CacheState::Owned => (),
-                    CacheState::Exclusive => cache.change_state_address(
-                        signal.address,
-                        CacheState::Shared,
-                    ),
-                    CacheState::Modified => cache.change_state_address(
-                        signal.address,
-                        CacheState::Owned,
-                    ),
+                    CacheState::Exclusive | CacheState::Modified => cache
+                        .change_state_address(
+                            signal.address,
+                            CacheState::Owned,
+                        ),
                 }
                 Ok(())
             }
@@ -59,6 +56,28 @@ fn controller_handle_signal(
         },
         BusAction::WriteMem(_) => Ok(()),
     }
+}
+
+fn maybe_write_back(
+    address: usize,
+    replaced_line: CacheLine,
+    bus_tx: &SyncSender<BusSignal>,
+    processor_i: usize,
+) -> Result<(), Box<dyn Error>> {
+    match replaced_line.state {
+        CacheState::Invalid | CacheState::Shared | CacheState::Exclusive => (),
+        // Write back
+        // No need to invalidate because for Modified everything else should be invalid and for Owned the others can keep their copies
+        CacheState::Modified | CacheState::Owned => {
+            box_err(bus_tx.send(BusSignal {
+                origin: processor_i,
+                address,
+                action: BusAction::WriteMem(replaced_line.data),
+            }))?;
+        }
+    }
+
+    Ok(())
 }
 
 fn cpu_execute_instruction(
@@ -89,9 +108,12 @@ fn cpu_execute_instruction(
                         let replaced_line =
                             cache.store_line(address, state, data);
 
-                        if replaced_line.state != CacheState::Invalid {
-                            panic!("Read miss on line that was available");
-                        }
+                        maybe_write_back(
+                            address,
+                            replaced_line,
+                            bus_tx,
+                            processor_i,
+                        )?;
                         Ok(())
                     }
                     Err(err) => Err(Box::new(err)),
@@ -99,7 +121,31 @@ fn cpu_execute_instruction(
             }
         },
 
-        Instruction::Write { address, data } => todo!(),
+        Instruction::Write { address, data } => {
+            let replaced_line =
+                cache.store_line(address, CacheState::Modified, data);
+
+            // report write miss
+            if (replaced_line.tag != cache.get_tag(address))
+                || (replaced_line.state == CacheState::Invalid)
+            {
+                gui_tx.send(Event::Alert {
+                    processor_i,
+                    op: MemOp::Write,
+                })?;
+            }
+
+            // invalidate other caches
+            if replaced_line.state != CacheState::Modified {
+                box_err(bus_tx.send(BusSignal {
+                    origin: processor_i,
+                    address,
+                    action: BusAction::Invalidate,
+                }))?
+            }
+
+            maybe_write_back(address, replaced_line, bus_tx, processor_i)
+        }
     }
 }
 

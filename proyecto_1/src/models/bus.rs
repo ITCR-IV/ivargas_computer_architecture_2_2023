@@ -63,12 +63,13 @@ impl Bus {
     }
 
     pub fn check_cache_data(&self) -> Result<Option<Data>, RecvError> {
+        let mut result = None;
         for _ in 0..self.controllers.len() - 1 {
             if let Some(data) = self.recv_data()? {
-                return Ok(Some(data));
+                result = Some(data);
             }
         }
-        Ok(None)
+        Ok(result)
     }
 
     pub fn send_data_to_cpu(
